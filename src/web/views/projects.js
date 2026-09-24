@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { h, card, table, mountAsync, stateEmpty, healthBadge, statusBadge, gateBadge, toast, modal } from '../ui.js';
 import { setTopbar, refreshShellData } from '../app.js';
 import { Router } from '../router.js';
+import { renderImportPanel } from './dropzone.js';
 
 export async function render() {
   setTopbar('Projects', 'Register local workspaces. Commander only ever reads them.', [
@@ -13,7 +14,7 @@ export async function render() {
   await mountAsync(view, () => api.projects(), (cards) => {
     if (!cards.length) {
       return h('div', { class: 'stack' }, [
-        stateEmpty('No projects registered', 'Add a local workspace directory, or seed the demo projects.'),
+        renderImportPanel({}),
         card('What happens when you add a project?', h('ol', { class: 'stack-sm small' }, [
           h('li', { text: 'Commander scans the directory (structure, stack, specs, TODO markers).' }),
           h('li', { text: 'Sensitive files (.env, *.key, credentials…) are detected but never read.' }),
@@ -22,7 +23,9 @@ export async function render() {
         ])),
       ]);
     }
-    return table([
+    return h('div', { class: 'stack' }, [
+      renderImportPanel({ compact: true }),
+      table([
       { label: 'Project', render: (r) => h('div', {}, [h('a', { href: `#/projects/${r.id}`, text: r.name }), r.isDemo ? h('span', { class: 'chip', style: { marginLeft: '6px' }, text: 'demo' }) : null, h('div', { class: 'path', text: r.workspacePath })]) },
       { label: 'Health', render: (r) => healthBadge(r.health) },
       { label: 'Status', render: (r) => h('span', { class: 'chip', text: r.status }) },
@@ -36,7 +39,8 @@ export async function render() {
         h('button', { class: 'btn btn-sm', text: 'Scan', onClick: (e) => { e.stopPropagation(); scan(r.id); } }),
         h('button', { class: 'btn btn-sm', text: 'Settings', onClick: (e) => { e.stopPropagation(); openProjectSettings(r); } }),
       ]) },
-    ], cards, { empty: 'No projects registered.' });
+    ], cards, { empty: 'No projects registered.' }),
+    ]);
   }, { loadingLabel: 'Loading projects…' });
 }
 

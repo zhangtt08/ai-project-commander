@@ -35,7 +35,7 @@ export function buildRouter(app) {
 
   // ── Settings ────────────────────────────────────────────────────────────
   r.get('/api/settings', () => {
-    const keys = ['ai.provider', 'ai.baseUrl', 'ai.model', 'ai.timeoutMs', 'watcher.enabled', 'watcher.autoQuickScan', 'scan.maxFiles'];
+    const keys = ['ai.provider', 'ai.baseUrl', 'ai.model', 'ai.timeoutMs', 'watcher.enabled', 'watcher.autoQuickScan', 'scan.maxFiles', 'workspace.searchRoots'];
     const out = {};
     for (const k of keys) {
       const v = app.repo.getSetting(k);
@@ -50,13 +50,38 @@ export function buildRouter(app) {
   });
 
   r.patch('/api/settings', ({ body }) => {
-    const allowed = ['ai.provider', 'ai.baseUrl', 'ai.model', 'ai.timeoutMs', 'watcher.enabled', 'watcher.autoQuickScan', 'scan.maxFiles'];
+    const allowed = ['ai.provider', 'ai.baseUrl', 'ai.model', 'ai.timeoutMs', 'watcher.enabled', 'watcher.autoQuickScan', 'scan.maxFiles', 'workspace.searchRoots'];
     const patch = {};
     for (const k of allowed) if (body[k] !== undefined) patch[k] = String(body[k]);
     if (body['ai.apiKey'] && body['ai.apiKey'] !== '__stored__') patch['ai.apiKey'] = String(body['ai.apiKey']);
     const described = app.updateProviderSettings(patch);
     if (patch['watcher.autoQuickScan'] !== undefined) app.watcher.autoQuickScan = patch['watcher.autoQuickScan'] === 'true';
     return { providers: described, aiStats: app.structured.describeStats() };
+  });
+
+  // ── Workspace resolution (drag & drop import) ──────────────────────────
+  r.post('/api/workspaces/resolve', async ({ body }) => {
+    const folderName = requireParam(body, 'folderName', { maxLength: 200 });
+    let roots = null;
+    const raw = app.repo.getSetting('workspace.searchRoots');
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) roots = parsed.map(String).slice(0, 12);
+      } catch { /* fall back to defaults */ }
+    }
+    const { findCandidates, recogniseCandidate } = await import('../core/workspace-resolver.js');
+    const candidates = findCandidates(folderName, { roots });
+    const recognised = [];
+    for (const c of candidates.slice(0, 5)) {
+      recognised.push(await recogniseCandidate(c.path, { scanner: app.scanner }));
+    }
+    return {
+      query: folderName,
+      candidates: recognised,
+      roots: roots || null,
+      note: recognised.length ? null : 'No matching folder found in the configured search roots. Add the parent folder to Settings → Search roots, or enter the path manually.',
+    };
   });
 
   // ── Projects ────────────────────────────────────────────────────────────

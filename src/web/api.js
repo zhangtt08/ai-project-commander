@@ -38,6 +38,7 @@ export const api = {
   search: (q) => request('GET', `/api/search?q=${encodeURIComponent(q)}`),
 
   projects: () => request('GET', '/api/projects'),
+  resolveWorkspace: (folderName) => request('POST', '/api/workspaces/resolve', { folderName }),
   addProject: (b) => request('POST', '/api/projects', b),
   project: (id) => request('GET', `/api/projects/${id}`),
   projectDetail: (id) => request('GET', `/api/projects/${id}/detail`),

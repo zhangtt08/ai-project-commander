@@ -53,6 +53,9 @@ for (const file of SRC) {
         'src/core/fs-safe.js', 'src/core/logger.js', 'src/db/database.js',
         'src/core/jobs.js', 'src/core/app.js', 'src/core/command-runner.js',
         'src/demo/fixture-factory.js',
+        // workspace-resolver.js: read-only directory probing for drag & drop
+        // import (readdirSync/statSync/existsSync only — never writes, ADR-009)
+        'src/core/workspace-resolver.js',
       ];
       if (r.startsWith('src/core/') && !allowed.includes(r)) {
         violations.push(`${loc} — direct node:fs import in src/core is not allowed outside ${allowed.join(', ')} (ADR-004/ADR-009)`);

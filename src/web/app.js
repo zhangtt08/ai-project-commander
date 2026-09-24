@@ -55,6 +55,19 @@ export function renderNav() {
   }
 }
 
+export function applyTheme(theme) {
+  const t = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('commander.theme', t); } catch { /* private mode */ }
+  const btn = document.getElementById('theme-toggle');
+  if (btn) {
+    clear(btn);
+    btn.appendChild(h('span', { text: t === 'dark' ? 'Dark' : 'Light' }));
+    btn.title = 'Toggle light / dark theme';
+    btn.setAttribute('aria-label', `Current theme: ${t}. Click to switch.`);
+  }
+}
+
 export function setSystemPill() {
   const pill = document.getElementById('system-pill');
   if (!pill) return;
@@ -83,6 +96,17 @@ export async function refreshShellData() {
   } catch (err) {
     toast(`Shell refresh failed: ${err.message}`, 'error');
   }
+}
+
+function renderSidebarTools() {
+  const tools = document.getElementById('sidebar-tools');
+  if (!tools || tools.childElementCount) return;
+  const toggle = h('button', { class: 'btn btn-sm btn-ghost', id: 'theme-toggle', onClick: () => {
+    const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  } });
+  tools.appendChild(toggle);
+  applyTheme(document.documentElement.dataset.theme || 'dark');
 }
 
 async function boot() {
@@ -118,6 +142,7 @@ async function boot() {
     toast(`Could not load API metadata: ${err.message}`, 'error');
   }
   await refreshShellData();
+  renderSidebarTools();
   if ((state.dashboard?.counts?.total || 0) === 0) {
     Router.go('/projects');
   }

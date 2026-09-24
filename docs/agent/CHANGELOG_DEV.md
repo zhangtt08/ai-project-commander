@@ -82,3 +82,13 @@
 | 架构 | 产品代码 import 测试目录（fixture 工厂） | 迁移至 `src/demo/fixture-factory.js`，lint 白名单收敛 |
 | 增强 | 全量扫描后无 NextAction（需手动生成） | 编排器自动计算确定性 NextAction（无需 API Key） |
 | 迁移 | regressions 表缺 fingerprint 列 | Migration v3（增量 ALTER，不删库） |
+
+## UI 重设计 + 拖拽导入（交付后增强，2026-09-24）
+
+| 类别 | 内容 |
+| --- | --- |
+| 设计 | 采用 web-design-engineer 技能的 Linear 配方整体重写 `styles.css`：暖黑 #08090A 底、hairline 边框、单一紫罗兰强调色（<5% 面积）、6/10/12 圆角、150ms ease-out 微动效、cubic-bezier(0.22,1,0.36,1) |
+| 主题 | `data-theme` 双主题（dark 默认 + light），localStorage 持久化，首屏无闪烁引导脚本 |
+| 功能 | 新增"可识别的拖拽导入"：Projects 页拖入文件夹 → 浏览器仅暴露文件夹名 → `workspace-resolver` 在可配置根目录中定位真实路径 → 真实 Scanner 识别每个候选（语言/框架/包管理器/git/spec/文件数）→ 候选卡一键导入并自动全量扫描 |
+| API | `POST /api/workspaces/resolve`；Settings 新增 Search roots 配置（`workspace.searchRoots`） |
+| 保障 | 既有 16 步 E2E 全程绿（重设计未破坏任何行为契约）；新增 9 个 resolver 单测（共 142/142） |

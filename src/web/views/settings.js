@@ -33,6 +33,7 @@ export async function render() {
           'watcher.enabled': fields.watcherEnabled.checked ? 'true' : 'false',
           'watcher.autoQuickScan': fields.autoQuick.checked ? 'true' : 'false',
           'scan.maxFiles': fields.maxFiles.value.trim(),
+          'workspace.searchRoots': JSON.stringify(rootsField.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 12)),
         });
         toast('Settings saved', 'ok');
         await refreshShellData();
@@ -69,6 +70,21 @@ export async function render() {
       h('div', { class: 'small muted', text: `Watching ${system.watcher.watching.length} workspace(s). Debounce ${system.watcher.debounceMs}ms, rate limit ${system.watcher.maxEventsPerMinute}/min.` }),
     ]));
 
+    const rootsField = h('textarea', {
+      class: 'textarea', rows: '5', 'aria-label': 'Search roots',
+      placeholder: 'C:////Users////you////Desktop//nD:////dev',
+    });
+    try {
+      const stored = settings['workspace.searchRoots'];
+      const arr = stored ? JSON.parse(stored) : [];
+      rootsField.value = Array.isArray(arr) ? arr.join('\n') : '';
+    } catch { rootsField.value = ''; }
+    const searchRootsCard = card('Folder Recognition (drag & drop import)', h('div', { class: 'stack' }, [
+      h('p', { class: 'small muted', text: 'When you drop a folder on the Projects page, the browser only reveals its name — never its path. Commander therefore searches these roots to resolve the real location, then recognises each match with the scanner.' }),
+      rootsField,
+      h('div', { class: 'small muted', text: 'One absolute path per line. Searched top-down, up to 2 levels deep; node_modules, .git and system folders are skipped.' }),
+    ]));
+
     const metaCard = card('Test parsers & adapters', h('div', { class: 'grid grid-2' }, [
       table([{ label: 'Framework', key: 'framework' }, { label: 'Recognised summary', key: 'summaryPattern' }], meta.testParsers),
       table([
@@ -93,6 +109,7 @@ export async function render() {
     return h('div', { class: 'stack' }, [
       providerCard,
       watcherCard,
+      searchRootsCard,
       metaCard,
       systemCard,
     ]);
