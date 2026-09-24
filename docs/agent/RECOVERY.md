@@ -93,7 +93,7 @@ git add -A && git commit -m "feat(<scope>): <what>"
 | `ExperimentalWarning: SQLite` | Node 22 的 `node:sqlite` 是实验 API | 正常，忽略 |
 | `Cannot find module 'node:sqlite'` | Node < 22.5 | 升级 Node，或改用系统 Node 24 |
 | E2E 报找不到 Chromium | 本机 playwright 浏览器缓存被清 | 改用 managed Python 的 playwright（已预装 Chromium） |
-| 端口 8787 被占用 | 上次 dev server 没关 | `node src/server/cli.js dev --port 8788` |
+| 端口 8787 被占用 | 本机其他应用占用了默认端口 | 无需处理：dev 会自动从 8787 起向上找空闲端口（最多 +20），以启动横幅里打印的 URL 为准 |
 | `data/commander.db` 损坏 | 异常中断写入 | 直接删除 `data/`，重启会自动迁移 + 重新 seed Demo，不丢源码 |
 | 扫描很慢 | 扫到大仓库 | Settings 里降低 `maxFiles` / 提高 ignore 规则 |
 

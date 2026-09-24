@@ -253,6 +253,11 @@ export function buildRouter(app) {
   });
 
   r.get('/api/projects/:id/issues', ({ params }) => ({ issues: app.repo.list('issues', { project_id: params.id }, { orderBy: 'created_at DESC' }) }));
+  r.patch('/api/issues/:id', ({ params, body }) => {
+    const issue = app.repo.get('issues', params.id);
+    if (!issue) throw new NotFoundError('issue', params.id);
+    return app.repo.update('issues', params.id, { status: String(body.status || 'open') });
+  });
   r.post('/api/projects/:id/issues', ({ params, body }) => {
     needProject(app, params.id);
     return app.repo.insert('issues', {

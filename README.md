@@ -39,6 +39,7 @@ A local-first desktop-class web application that:
 | Acceptance Gate | PASS / FAIL / BLOCKED / UNKNOWN **with an explanation** of every blocking check |
 | Health engine | healthy / warning / critical / unknown with a transparent, inspectable reason list ("Why?") |
 | Risk engine | 16 deterministic rules, each with severity, evidence and a suggested action |
+| Issues | File manual issues next to computed risks — computed vs. filed is always distinguishable |
 | Regression detector | build PASS→FAIL, tests PASS→FAIL, passing-count drops, test-count drops, critical-risk increases, file deletions, gate regressions |
 | Task Ledger | Tasks derived from specs, markdown checkboxes, TODO/FIXME markers, agent logs, manual entry and AI — with provenance and confidence |
 | Project Memory | Versioned, append-only project memory rendered for prompts and handoffs |
@@ -74,7 +75,7 @@ once on failure, and falls back to a deterministic mock that is *labelled as moc
 - **Backend**: zero-dependency HTTP server, ESM
 - **Database**: SQLite (WAL, foreign keys, versioned migrations, FTS5 when available)
 - **Frontend**: vanilla ES modules + hand-written CSS (Linear-style light theme)
-- **Tests**: `node:test` (133 unit + 40 integration), Playwright/Chromium for E2E (12 steps)
+- **Tests**: `node:test` (133 unit + 40 integration), Playwright/Chromium for E2E (16 steps)
 - **Package manager**: npm — with **zero runtime dependencies**, `npm install` is instant and fully offline
 
 ## Quick Start
@@ -147,6 +148,8 @@ npm run verify         # typecheck + lint + build + unit + integration in one co
 
 ```bash
 npm run test:e2e       # ~2.5 min (seeds demo data, starts server, drives Chromium)
+                       # covers: dashboard, attention, detail, tests, risks, issues, tasks,
+                       # decisions, memory, transcript import, prompt, handoff, search, a11y
 ```
 
 ## AI Provider Setup

@@ -66,7 +66,7 @@ Legend: `[ ]` 未开始 · `[~]` 进行中 · `[x]` 已完成 · `[!]` 阻塞
 ## Stage 7 — Health / Risk / Progress / Drift
 
 - [x] ProjectHealthEngine：healthy/warning/critical/unknown + 透明理由列表（可点 Why?）
-- [x] RiskEngine：14 类规则（build fail / tests fail / e2e regression / dirty files / 关键文件删除 / SPEC drift / 测试被删 / mock 泄漏 / TODO 激增 / 超大文件 / 长期 blocked / acceptance 不满足 / 未知脚本 / 敏感文件）
+- [x] RiskEngine：16 类规则（build fail / tests fail / e2e regression / dirty files / 关键文件删除 / SPEC drift / 测试被删 / mock 泄漏 / TODO 激增 / 超大文件 / 长期 blocked / acceptance 不满足 / 未知脚本 / 敏感文件）
 - [x] ProgressEngine：仅来自 stage + task + acceptance；信息不足 → unknown（禁止 LLM 编百分比）
 - [x] DriftDetector：输出 "Possible Drift" + evidence，不断言
 - [x] 单测：每条规则至少一个正向/反向用例
@@ -99,7 +99,7 @@ Legend: `[ ]` 未开始 · `[~]` 进行中 · `[x]` 已完成 · `[!]` 阻塞
 
 - [x] Dashboard：统计卡（total/healthy/warning/critical/blocked）+ 项目卡片（真实数据）
 - [x] Attention Center：critical / blocked / build fail / test fail / regression / dirty / review
-- [x] Project Detail 13 tabs：Overview / Stages / Tasks / Tests / Build / Git / Changes / Prompts / Sessions / Risks / Memory / Decisions / Timeline / Settings
+- [x] Project Detail 14 tabs：Overview / Stages / Tasks / Tests / Build / Git / Changes / Prompts / Sessions / Risks(+Issues) / Memory / Decisions / Timeline / Settings
 - [x] Linear 风格浅色 UI，高信息密度，无廉价渐变
 - [x] 完整状态处理：loading / empty / success / error
 - [x] 键盘可达 + 语义化 HTML + focus 可见
@@ -123,7 +123,7 @@ Legend: `[ ]` 未开始 · `[~]` 进行中 · `[x]` 已完成 · `[!]` 阻塞
 
 - [x] 3 个 fixture 项目（healthy / test-failure / build-failure）真实生成并分析
 - [x] 集成测试：扫描 → git → build → test → snapshot → regression → health → next action 全链路
-- [x] E2E：真实 Chromium 打开 → Dashboard → 添加 fixture → 扫描 → Detail → Tests → Risks → Next Action → 生成 Prompt
+- [x] E2E：真实 Chromium 16 步主路径（Dashboard → Attention → Detail → Tests → Risks → Issues 建单 → Next Action → Tasks → Decisions+Memory → 会话导入 → Prompt → Handoff → Search → Settings → 键盘 → 零控制台错误）
 - [x] E2E 截图存档
 
 ## Stage 15 — Security + Recovery Audit

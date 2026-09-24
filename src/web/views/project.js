@@ -573,7 +573,7 @@ async function renderSessions(container, id) {
 // ───────────────────────────── Risks ─────────────────────────────
 
 async function renderRisks(container, id) {
-  await mountAsync(container, async () => ({ risks: await api.risks(id), regressions: await api.regressions(id) }), ({ risks, regressions }) => h('div', { class: 'stack' }, [
+  await mountAsync(container, async () => ({ risks: await api.risks(id), regressions: await api.regressions(id), issues: await api.issues(id) }), ({ risks, regressions, issues }) => h('div', { class: 'stack' }, [
     card(`Risks (${risks.summary.total})`, h('div', { class: 'stack-sm' }, [
       h('div', { class: 'row wrap' }, Object.entries(risks.summary.bySeverity).map(([sev, count]) => h('span', { class: `badge ${sev === 'critical' ? 'badge-critical' : sev === 'high' ? 'badge-warning' : 'badge-neutral'}`, text: `${sev}: ${count}` }))),
       ...risks.risks.map((r) => h('div', { class: `risk-item sev-${r.severity}` }, [
@@ -598,6 +598,36 @@ async function renderRisks(container, id) {
         evidenceList(r.evidence),
       ])),
     ]), { hint: 'deterministic rules · AI risks are additive and clearly labelled' }),
+    card(`Issues (${issues.issues.length})`, (() => {
+      const title = h('input', { class: 'input', placeholder: 'New issue title', 'aria-label': 'New issue title' });
+      const severity = h('select', { class: 'select', 'aria-label': 'Issue severity' }, ['low', 'medium', 'high', 'critical'].map((sv) => h('option', { value: sv, selected: sv === 'medium', text: sv })));
+      const description = h('input', { class: 'input', placeholder: 'What is wrong? (optional)', 'aria-label': 'Issue description' });
+      const create = async () => {
+        const t = title.value.trim();
+        if (!t) { toast('Issue title is required', 'error'); return; }
+        try {
+          await api.addIssue(id, { title: t, severity: severity.value, description: description.value.trim() });
+          toast('Issue created', 'ok');
+          renderRisks(container, id);
+        } catch (err) { toast(err.message, 'error'); }
+      };
+      title.addEventListener('keydown', (e) => { if (e.key === 'Enter') create(); });
+      return h('div', { class: 'stack' }, [
+        h('div', { class: 'row wrap' }, [h('div', { style: { flex: '2 1 220px' } }, title), h('div', { style: { width: '110px' } }, severity), h('div', { style: { flex: '2 1 220px' } }, description), h('button', { class: 'btn btn-primary', text: 'Add', onClick: create })]),
+        issues.issues.length
+          ? table([
+            { label: 'Status', render: (r) => h('select', {
+              class: 'select btn-sm', 'aria-label': `Status of ${r.title}`, style: { width: '104px' },
+              onChange: async (e) => { await api.updateIssue(r.id, { status: e.target.value }); renderRisks(container, id); },
+            }, ['open', 'resolved'].map((st) => h('option', { value: st, selected: st === r.status, text: st }))) },
+            { label: 'Severity', render: (r) => h('span', { class: `badge ${r.severity === 'critical' ? 'badge-critical' : r.severity === 'high' ? 'badge-warning' : 'badge-neutral'}`, text: r.severity }) },
+            { label: 'Title', render: (r) => h('span', { class: 'small', text: r.title }) },
+            { label: 'Description', render: (r) => h('span', { class: 'small muted', text: fmt.truncate(r.description, 120) }) },
+            { label: 'Created', render: (r) => fmt.rel(r.created_at) },
+          ], issues.issues)
+          : h('div', { class: 'small muted', text: 'No issues recorded. Risks are computed automatically; issues are the ones you file by hand.' }),
+      ]);
+    })(), { hint: 'manual bug/issue records — risks are computed, issues are filed' }),
     card(`Regressions (${regressions.summary.count})`, regressions.regressions.length ? table([
       { label: 'When', render: (r) => fmt.date(r.ts) },
       { label: 'Type', render: (r) => h('code', { class: 'inline', text: r.type }) },

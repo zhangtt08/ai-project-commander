@@ -40,9 +40,13 @@
 | search finds indexed content | PASS |
 | settings screen renders provider and security info | PASS |
 | keyboard navigation works | PASS |
+| issues can be filed manually and listed next to computed risks | PASS |
+| tasks can be created and moved through the ledger | PASS |
+| decisions and project memory versioning work | PASS |
+| agent transcript import closes the prompt loop | PASS |
 | no console/page errors | PASS |
 
-截图存档：`.e2e-artifacts/`（final-dashboard.png、prompt-modal.png、handoff.png）
+截图存档：`.e2e-artifacts/`（final-dashboard.png、prompt-modal.png、handoff.png、FAIL-*.png 仅在失败时生成）
 
 ## 关键断言摘录（来自真实测试运行）
 

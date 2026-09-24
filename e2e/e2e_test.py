@@ -100,6 +100,55 @@ def risks_tab(page):
     assert page.locator(".chip").count() >= 3, "risks must carry evidence chips"
 
 
+@step("issues can be filed manually and listed next to computed risks")
+def issues_tab(page):
+    page.wait_for_selector("text=Issues (0)", timeout=15000)
+    page.fill("input[aria-label='New issue title']", "Checkout double charges the card")
+    page.select_option("select[aria-label='Issue severity']", "high")
+    page.fill("input[aria-label='Issue description']", "Reported by a user on the payment step")
+    page.locator(".card button", has_text="Add").first.click()
+    expect(page.locator("body")).to_contain_text("Issues (1)", timeout=15000)
+    expect(page.locator("body")).to_contain_text("Checkout double charges the card", timeout=15000)
+
+
+@step("tasks can be created and moved through the ledger")
+def tasks_tab(page):
+    page.locator(".tab", has_text="Tasks").click()
+    page.fill("input[aria-label='New task title']", "Fix double charge on checkout")
+    page.locator("button:has-text('Add')").click()
+    expect(page.locator("body")).to_contain_text("Fix double charge on checkout", timeout=15000)
+    row = page.locator("tr", has_text="Fix double charge on checkout")
+    row.locator("select").first.select_option("in_progress")
+    expect(page.locator("body")).to_contain_text("in_progress", timeout=15000)
+
+
+@step("decisions and project memory versioning work")
+def decisions_memory(page):
+    page.locator(".tab", has_text="Decisions").click()
+    page.fill("input[aria-label='Decision title']", "Use SQLite for all local state")
+    page.fill("textarea[aria-label='Decision']", "One embedded database, versioned migrations, no server.")
+    page.locator("button:has-text('Create ADR')").click()
+    expect(page.locator("body")).to_contain_text("Use SQLite for all local state", timeout=15000)
+    page.locator(".tab", has_text="Memory").click()
+    expect(page.locator("body")).to_contain_text("Project Memory v", timeout=15000)
+    page.fill("input[aria-label='Memory note']", "note recorded by the e2e run")
+    page.locator("button:has-text('Create new version')").click()
+    expect(page.locator("body")).to_contain_text("note recorded by the e2e run", timeout=15000)
+    expect(page.locator("body")).to_contain_text("Version history", timeout=15000)
+
+
+@step("agent transcript import closes the prompt loop")
+def sessions_tab(page):
+    page.locator(".tab", has_text="Agent Sessions").click()
+    transcript = "$ npm test\nexit code 0\n$ npm run test:e2e\n  22 passed (18.4s)\n  3 failed\nexit code 1\nEdited file: src/planner/weekly.js\n"
+    page.fill("textarea[aria-label='Transcript']", transcript)
+    page.select_option("select[aria-label='Provider']", "claude_code")
+    page.locator("button:has-text('Import transcript')").click()
+    expect(page.locator("body")).to_contain_text("Imported sessions (1)", timeout=15000)
+    expect(page.locator("body")).to_contain_text("claude_code", timeout=15000)
+    expect(page.locator("body")).to_contain_text("2", timeout=10000)  # 2 commands parsed from the transcript
+
+
 @step("next action is rendered with priority and verification commands")
 def next_action(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
@@ -192,7 +241,11 @@ def main():
         overview(page)
         tests_tab(page)
         risks_tab(page)
+        issues_tab(page)
         next_action(page)
+        tasks_tab(page)
+        decisions_memory(page)
+        sessions_tab(page)
         generate_prompt(page)
         handoff(page)
         search(page)
