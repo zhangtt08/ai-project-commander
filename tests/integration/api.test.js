@@ -1,0 +1,236 @@
+/**
+ * API integration tests — the same HTTP surface the web UI consumes.
+ * A real server is started on an ephemeral port and exercised with fetch.
+ */
+import { test, describe, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { App } from '../../src/core/app.js';
+import { buildRouter } from '../../src/server/routes.js';
+import { createHttpServer } from '../../src/server/http-server.js';
+import { createFixtureProject } from '../../src/demo/fixture-factory.js';
+
+const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-api-'));
+let app, server, baseUrl, fixtureDir;
+
+function request(method, p, body) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(`${baseUrl}${p}`, {
+      method,
+      headers: body ? { 'content-type': 'application/json' } : {},
+    }, (res) => {
+      let text = '';
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => {
+        let json = null;
+        try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text }; }
+        resolve({ status: res.statusCode, json, text });
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
+before(async () => {
+  app = new App({ dataDir: path.join(ROOT, 'data'), logLevel: 'error' });
+  server = createHttpServer({ router: buildRouter(app), app });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  baseUrl = `http://127.0.0.1:${server.address().port}`;
+  fixtureDir = path.join(ROOT, 'fixture');
+  createFixtureProject(fixtureDir, 'warning');
+});
+
+after(() => { try { app.close(); server.close(); } catch { /* noop */ } });
+
+describe('meta and health endpoints', () => {
+  test('GET /api/health reports version', async () => {
+    const res = await request('GET', '/api/health');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.data.ok, true);
+  });
+
+  test('GET /api/system exposes the runtime shape without secrets', async () => {
+    const res = await request('GET', '/api/system');
+    assert.equal(res.status, 200);
+    assert.match(res.json.data.nodeVersion, /^v/);
+    assert.ok(res.json.data.providers.every((p) => !('apiKey' in p) && !('config' in p)));
+  });
+
+  test('GET /api/security documents the safety model', async () => {
+    const res = await request('GET', '/api/security');
+    assert.equal(res.json.data.commandRunner.shellEnabled, false);
+    assert.ok(res.json.data.commandRunner.alwaysBlocked.includes('rm'));
+  });
+});
+
+describe('project lifecycle over HTTP', () => {
+  let projectId;
+
+  test('adding a workspace returns a project card', async () => {
+    const res = await request('POST', '/api/projects', { workspacePath: fixtureDir, name: 'API fixture' });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.data.name, 'API fixture');
+    assert.equal(res.json.data.health, 'unknown');
+    projectId = res.json.data.id;
+  });
+
+  test('adding the same workspace twice is a conflict with a hint', async () => {
+    const res = await request('POST', '/api/projects', { workspacePath: fixtureDir });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.error.code, 'conflict');
+    assert.ok(res.json.error.hint);
+  });
+
+  test('adding a missing directory is a 400 with a helpful hint', async () => {
+    const res = await request('POST', '/api/projects', { workspacePath: path.join(ROOT, 'ghost') });
+    assert.equal(res.status, 400);
+    assert.match(res.json.error.message, /does not exist/);
+  });
+
+  test('a malformed JSON body is rejected without leaking a stack', async () => {
+    const res = await new Promise((resolve, reject) => {
+      const req = http.request(`${baseUrl}/api/projects`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r) => {
+        let t = ''; r.on('data', (c) => { t += c; }); r.on('end', () => resolve({ status: r.statusCode, text: t }));
+      });
+      req.on('error', reject);
+      req.write('{not json');
+      req.end();
+    });
+    assert.equal(res.status, 400);
+    const stackFrame = new RegExp('[/\\\\][A-Za-z0-9.@_-]+\\\\.js:[0-9]+:[0-9]+');
+    assert.ok(!stackFrame.test(res.text), 'a stack frame leaked to the client');
+  });
+
+  test('the quick scan endpoint returns real git + file counts', async () => {
+    const res = await request('POST', `/api/projects/${projectId}/scan-sync`, { mode: 'quick' });
+    assert.equal(res.status, 200);
+    assert.ok(res.json.data.files > 8);
+    assert.equal(res.json.data.git.clean, true);
+  });
+
+  test('the full scan endpoint runs build and tests for real', { timeout: 240000 }, async () => {
+    const res = await request('POST', `/api/projects/${projectId}/scan-sync`, { mode: 'full', runCommands: true });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.data.mode, 'full');
+    assert.equal(res.json.data.build, 'pass');
+    assert.equal(res.json.data.unit, '2/2');
+    assert.equal(res.json.data.e2e, '22/25');
+    assert.equal(res.json.data.gate, 'FAIL');
+    assert.ok(res.json.data.snapshotSeq >= 1);
+  });
+
+  test('project detail aggregates every tab payload', async () => {
+    const res = await request('GET', `/api/projects/${projectId}/detail`);
+    const d = res.json.data;
+    assert.equal(d.project.health, 'warning');
+    assert.ok(d.gate.explanation.includes('cannot advance'));
+    assert.ok(d.nextAction.objective.length > 5);
+    assert.ok(d.commands.some((c) => c.kind === 'build' && c.supported));
+    assert.equal(d.metadata.sensitiveCount, 0);
+    assert.ok(d.memoryVersion >= 1);
+  });
+
+  test('tasks, stages, tests, builds, git, risks and timeline endpoints respond', async () => {
+    for (const p of ['/tasks', '/stages', '/tests', '/builds', '/git', '/risks', '/regressions', '/specs', '/memory', '/decisions', '/prompts', '/sessions', '/timeline', '/changes', '/snapshots', '/next-action']) {
+      const res = await request('GET', `/api/projects/${projectId}${p}`);
+      assert.equal(res.status, 200, `${p} failed`);
+      assert.ok(res.json.data !== undefined, `${p} returned no data`);
+    }
+  });
+
+  test('next-action can be recomputed without AI and stays deterministic', async () => {
+    const a = await request('POST', `/api/projects/${projectId}/next-action`, { useAI: false });
+    const b = await request('POST', `/api/projects/${projectId}/next-action`, { useAI: false });
+    assert.equal(a.json.data.rule, b.json.data.rule);
+    assert.equal(a.json.data.objective, b.json.data.objective);
+  });
+
+  test('prompt generation returns a prompt with all ten sections', { timeout: 60000 }, async () => {
+    const res = await request('POST', `/api/projects/${projectId}/prompts`, { agentKey: 'generic_cli' });
+    assert.equal(res.status, 200);
+    const { prompt, meta } = res.json.data;
+    assert.deepEqual(meta.sections.missing, []);
+    for (const s of ['PROJECT CONTEXT', 'OBJECTIVE', 'DO NOT BREAK', 'VERIFICATION COMMANDS', 'COMPLETION REQUIREMENTS']) {
+      assert.ok(prompt.content.includes(`## ${s}`));
+    }
+  });
+
+  test('handoff package is complete and exportable', async () => {
+    const res = await request('GET', `/api/projects/${projectId}/handoff`);
+    assert.deepEqual(res.json.data.missingSections, []);
+    const exp = await request('POST', `/api/projects/${projectId}/handoff/export`, {});
+    assert.equal(exp.status, 200);
+    assert.ok(exp.json.data.bytes > 500);
+    const file = await request('GET', exp.json.data.url);
+    assert.equal(file.status, 200);
+    assert.match(file.text, /## Next Action/);
+  });
+
+  test('agent session import parses a real transcript', async () => {
+    const transcript = '$ npm test\nexit code 0\n$ npm run test:e2e\n  22 passed (18.4s)\n  3 failed\nexit code 1\nEdited file: src/planner/weekly.js\n';
+    const res = await request('POST', `/api/projects/${projectId}/sessions/import`, { transcript, provider: 'claude_code' });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.data.status, 'failed');
+    assert.ok(res.json.data.changed_files.includes('src/planner/weekly.js'));
+    assert.equal(res.json.data.is_mock, false);
+  });
+
+  test('demo seeding produces three analysed projects', { timeout: 300000 }, async () => {
+    const res = await request('POST', '/api/demo/seed', { runCommands: true });
+    assert.equal(res.status, 200);
+    const dash = await request('GET', '/api/dashboard');
+    assert.ok(dash.json.data.counts.total >= 4);
+    assert.ok(dash.json.data.counts.healthy >= 1);
+    assert.ok(dash.json.data.counts.critical >= 1);
+    const attention = await request('GET', '/api/attention');
+    assert.ok(attention.json.data.items.length > 0);
+  });
+
+  test('search finds indexed content', { timeout: 300000 }, async () => {
+    const res = await request('GET', '/api/search?q=checkout');
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(res.json.data.results));
+  });
+
+  test('settings round-trip without exposing the API key', async () => {
+    const saved = await request('PATCH', '/api/settings', { 'ai.provider': 'mock', 'ai.model': 'test-model' });
+    assert.equal(saved.status, 200);
+    const read = await request('GET', '/api/settings');
+    assert.equal(read.json.data['ai.provider'], 'mock');
+    assert.ok(read.json.data['ai.apiKey'] !== 'secret-value');
+  });
+
+  test('deleting a record requires an explicit safe mode', async () => {
+    const refused = await request('DELETE', `/api/projects/${projectId}`);
+    assert.equal(refused.status, 400);
+    assert.match(refused.json.error.message, /never deletes source directories/);
+    const ok = await request('DELETE', `/api/projects/${projectId}?mode=record_only`);
+    assert.equal(ok.status, 200);
+    assert.ok(ok.json.data.sourceDirectoryUntouched);
+  });
+
+  test('unknown routes return a structured 404', async () => {
+    const res = await request('GET', '/api/definitely-not-a-route');
+    assert.equal(res.status, 404);
+    assert.equal(res.json.error.code, 'not_found');
+  });
+});
+
+describe('static frontend', () => {
+  test('the SPA shell is served', async () => {
+    const res = await request('GET', '/');
+    assert.equal(res.status, 200);
+    assert.match(res.text, /<div id="app-shell">/);
+    assert.match(res.text, /AI Project Commander/);
+  });
+
+  test('path traversal is blocked', async () => {
+    const res = await request('GET', '/..%2f..%2fpackage.json');
+    assert.ok([403, 404].includes(res.status));
+  });
+});

@@ -1,0 +1,25 @@
+{
+  "name": "ai-project-commander",
+  "version": "0.9.0",
+  "private": true,
+  "description": "AI Project Commander - control plane for AI coding projects (local-first, evidence-based)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "node src/server/cli.js dev",
+    "start": "node src/server/cli.js start",
+    "seed:demo": "node src/server/cli.js seed-demo",
+    "build": "node src/server/cli.js build",
+    "typecheck": "node tools/typecheck.js",
+    "lint": "node tools/lint.js",
+    "test": "node scripts/run-tests.js --all",
+    "test:unit": "node scripts/run-tests.js --unit",
+    "test:integration": "node scripts/run-tests.js --integration",
+    "test:e2e": "node scripts/run-e2e.js",
+    "verify": "node scripts/verify.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

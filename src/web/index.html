@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Project Commander</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235e6ad2'/%3E%3Cpath d='M9 21.5 16 9l7 12.5' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+<div id="app-shell">
+  <aside id="sidebar" aria-label="Primary navigation">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-text">
+        <strong>Project Commander</strong>
+        <small>AI coding control plane</small>
+      </span>
+    </div>
+    <nav id="nav" aria-label="Sections"></nav>
+    <div class="sidebar-footer">
+      <div id="system-pill" class="pill pill-idle">connecting…</div>
+      <div class="sidebar-links">
+        <a href="#/settings">Settings</a>
+        <span aria-hidden="true">·</span>
+        <a href="/api/security" target="_blank" rel="noopener">Security model</a>
+      </div>
+    </div>
+  </aside>
+  <main id="main" tabindex="-1">
+    <header id="topbar"></header>
+    <div id="view" aria-live="polite"></div>
+  </main>
+</div>
+<div id="toast-region" role="status" aria-live="polite"></div>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
