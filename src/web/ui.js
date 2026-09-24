@@ -48,13 +48,13 @@ export const fmt = {
     const diff = Date.now() - new Date(ts).getTime();
     if (Number.isNaN(diff)) return '—';
     const s = Math.round(diff / 1000);
-    if (s < 60) return `${s}s ago`;
+    if (s < 60) return `${s} 秒前`;
     const m = Math.round(s / 60);
-    if (m < 60) return `${m}m ago`;
+    if (m < 60) return `${m} 分钟前`;
     const hr = Math.round(m / 60);
-    if (hr < 24) return `${hr}h ago`;
+    if (hr < 24) return `${hr} 小时前`;
     const d = Math.round(hr / 24);
-    return `${d}d ago`;
+    return `${d} 天前`;
   },
   duration(ms) {
     if (ms === null || ms === undefined) return '—';
@@ -142,7 +142,7 @@ export function table(columns, rows, { empty = 'No rows.', rowKey = null, onRowC
   return h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' }, [thead, tbody]));
 }
 
-export function stateLoading(label = 'Loading…') {
+export function stateLoading(label = '加载中…') {
   return h('div', { class: 'stack-sm' }, [
     h('div', { class: 'small muted', text: label }),
     h('div', { class: 'skeleton', style: { width: '70%' } }),
@@ -160,7 +160,7 @@ export function stateEmpty(title, detail = '') {
 
 export function stateError(err, onRetry = null) {
   return h('div', { class: 'state error' }, [
-    h('h3', { text: err && err.message ? err.message : 'Something went wrong' }),
+    h('h3', { text: err && err.message ? err.message : '出了点问题' }),
     err && err.hint ? h('div', { class: 'small', text: err.hint }) : null,
     err && err.code ? h('div', { class: 'evidence', text: `code: ${err.code}` }) : null,
     onRetry ? h('div', { style: { marginTop: '10px' } }, h('button', { class: 'btn btn-sm', text: 'Retry', onClick: onRetry })) : null,
@@ -203,7 +203,7 @@ export function evidenceList(evidence) {
 
 export function progressBar(progress) {
   if (!progress || progress.percent === null || progress.percent === undefined) {
-    return h('div', { class: 'small muted', text: `Progress unknown — ${progress && progress.reason ? progress.reason : 'insufficient data'}` });
+    return h('div', { class: 'small muted', text: `进度未知——${progress && progress.reason ? progress.reason : '数据不足'}` });
   }
   const pct = Math.max(0, Math.min(100, progress.percent));
   return h('div', { class: 'stack-sm' }, [
@@ -215,20 +215,20 @@ export function progressBar(progress) {
   ]);
 }
 
-export function copyButton(text, label = 'Copy') {  return h('button', {
+export function copyButton(text, label = '复制') {  return h('button', {
     class: 'btn btn-sm',
     text: label,
     onClick: async () => {
       try {
         await navigator.clipboard.writeText(text);
-        toast('Copied to clipboard', 'ok', 2000);
+        toast('已复制到剪贴板', 'ok', 2000);
       } catch {
         // Clipboard API can be blocked; fall back to a selection prompt.
         const ta = document.createElement('textarea');
         ta.value = text;
         document.body.appendChild(ta);
         ta.select();
-        try { document.execCommand('copy'); toast('Copied to clipboard', 'ok', 2000); } catch { toast('Copy failed — select the text manually', 'error'); }
+        try { document.execCommand('copy'); toast('已复制到剪贴板', 'ok', 2000); } catch { toast('复制失败——请手动选择文本', 'error'); }
         document.body.removeChild(ta);
       }
     },

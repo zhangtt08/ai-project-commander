@@ -129,7 +129,7 @@ async function renderOverview(container, id) {
     return h('div', { class: 'stack' }, [
       h('div', { class: 'grid grid-4' }, [
         metric('健康', p.health, { cls: p.health === 'healthy' ? 'ok' : p.health === 'critical' ? 'alert' : p.health === 'warning' ? 'warn' : '', foot: d.health ? `${d.health.score}/100` : '' }),
-        metric('Stage', p.currentStage || 'unknown', { sm: true, foot: p.status }),
+        metric('阶段', p.currentStage || '未知', { sm: true, foot: p.status }),
         metric('构建', d.build ? d.build.status : '未运行', { sm: true, cls: d.build && d.build.status === 'pass' ? 'ok' : d.build && d.build.status === 'fail' ? 'alert' : '', foot: d.build ? d.build.command : '' }),
         metric('单元测试', d.tests.unit ? `${d.tests.unit.passed}/${d.tests.unit.total}` : '未运行', { cls: d.tests.unit && d.tests.unit.status === 'pass' ? 'ok' : d.tests.unit && d.tests.unit.status === 'fail' ? 'alert' : '' }),
         metric('端到端测试', d.tests.e2e ? `${d.tests.e2e.passed}/${d.tests.e2e.total}` : '未运行', { cls: d.tests.e2e && d.tests.e2e.status === 'pass' ? 'ok' : d.tests.e2e && d.tests.e2e.status === 'fail' ? 'alert' : '' }),

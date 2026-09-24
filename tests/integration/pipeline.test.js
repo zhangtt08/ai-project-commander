@@ -80,11 +80,11 @@ describe('full pipeline over three real fixture projects', () => {
 
       // Next action + prompt generation
       const action = await app.aiService.nextAction(project.id, { engine: app.nextActionEngine });
-      assert.ok(action.objective.length > 10);
+      assert.ok(action.objective.length >= 4, `objective should be meaningful: ${action.objective}`);
       assert.ok(action.verificationCommands.length >= 1);
       assert.ok(['p0', 'p1', 'p2', 'p3'].includes(action.priority));
       if (c.kind === 'critical') assert.equal(action.priority, 'p0');
-      if (c.kind === 'warning') assert.match(action.objective, /[Ee]nd-to-end|[E2E]{3}/i);
+      if (c.kind === 'warning') assert.match(action.objective, /端到端/);
 
       const prompt = await app.promptGenerator.generate({
         project: app.getProject(project.id), metadata: out.metadata, git: out.git, build: out.build.build,

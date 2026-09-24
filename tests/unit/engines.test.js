@@ -155,7 +155,7 @@ describe('StageManager', () => {
     const planned = manager.plan({ specs: [], tasks: [] });
     assert.equal(planned.stages.length, 0);
     assert.equal(planned.confidence, 'unknown');
-    assert.match(planned.note, /Unknown/);
+    assert.match(planned.note, /未知/);
   });
 
   test('computes stage status from its tasks and criteria', () => {
@@ -176,21 +176,21 @@ describe('AcceptanceGate', () => {
   test('PASS when every check passes', () => {
     const gate = evaluateGate({ stage, build: passBuild, unit: passUnit, e2e: passE2E, risks: [], tasks: [{ stage_id: 'stg1', status: 'done' }], criteria: [] });
     assert.equal(gate.result, GATE_RESULT.PASS);
-    assert.match(gate.explanation, /may advance/);
+    assert.match(gate.explanation, /可以推进到下一阶段/);
   });
 
   test('FAIL and explains exactly which check blocked it', () => {
     const failing = { ...passE2E, status: RUN_STATUS.FAIL, passed: 22, total: 25, failed: 3 };
     const gate = evaluateGate({ stage, build: passBuild, unit: passUnit, e2e: failing, risks: [], tasks: [{ stage_id: 'stg1', status: 'done' }], criteria: [] });
     assert.equal(gate.result, GATE_RESULT.FAIL);
-    assert.ok(gate.failedChecks.some((c) => /E2E/.test(c)));
-    assert.match(gate.explanation, /3 of 25/);
+    assert.ok(gate.failedChecks.some((c) => /端到端/.test(c)));
+    assert.match(gate.explanation, /3 个失败/);
   });
 
   test('UNKNOWN when a stage cannot be identified', () => {
     const gate = evaluateGate({ stage: null, build: passBuild });
     assert.equal(gate.result, GATE_RESULT.UNKNOWN);
-    assert.match(gate.explanation, /stage is Unknown/);
+    assert.match(gate.explanation, /无法从规范或任务中确定项目阶段/);
   });
 
   test('high risks do not block the gate; critical risks do', () => {
@@ -267,14 +267,14 @@ describe('ProjectProgressEngine', () => {
     // stages (0.75 x 0.4) + tasks (0.5 x 0.3) + acceptance (0.5 x 0.3) = 0.6
     assert.equal(p.percent, 60);
     assert.equal(p.confidence, 'high');
-    assert.match(p.method, /weighted mean/);
+    assert.match(p.method, /加权平均/);
   });
 
   test('returns unknown rather than inventing a number', () => {
     const p = engine.compute({});
     assert.equal(p.value, null);
     assert.equal(p.confidence, 'unknown');
-    assert.match(p.reason, /Commander does not estimate percentages/);
+    assert.match(p.reason, /不估算百分比/);
   });
 
   test('excludes cancelled tasks and out-of-scope criteria', () => {
@@ -388,7 +388,7 @@ describe('DriftDetector', () => {
     });
     assert.equal(result.verdict, 'possible_drift');
     assert.ok(result.drifts.length > 0);
-    assert.match(result.note, /Possible Drift/);
+    assert.match(result.note, /可能存在漂移/);
     assert.ok(result.drifts.every((d) => d.evidence !== undefined && d.confidence));
   });
 
@@ -450,7 +450,7 @@ describe('NextActionEngine', () => {
   test('asks for a specification when nothing is actionable', () => {
     const a = engine.decide({});
     assert.equal(a.rule, 'no_spec');
-    assert.match(a.reason, /no specification/i);
+    assert.match(a.reason, /规范文档/);
   });
 
   test('every action carries the full contract', () => {

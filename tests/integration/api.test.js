@@ -128,7 +128,7 @@ describe('project lifecycle over HTTP', () => {
     const res = await request('GET', `/api/projects/${projectId}/detail`);
     const d = res.json.data;
     assert.equal(d.project.health, 'warning');
-    assert.ok(d.gate.explanation.includes('cannot advance'));
+    assert.ok(d.gate.explanation.includes('无法推进'));
     assert.ok(d.nextAction.objective.length > 5);
     assert.ok(d.commands.some((c) => c.kind === 'build' && c.supported));
     assert.equal(d.metadata.sensitiveCount, 0);
@@ -208,7 +208,7 @@ describe('project lifecycle over HTTP', () => {
   test('deleting a record requires an explicit safe mode', async () => {
     const refused = await request('DELETE', `/api/projects/${projectId}`);
     assert.equal(refused.status, 400);
-    assert.match(refused.json.error.message, /never deletes source directories/);
+    assert.match(refused.json.error.message, /绝不会删除源码目录/);
     const ok = await request('DELETE', `/api/projects/${projectId}?mode=record_only`);
     assert.equal(ok.status, 200);
     assert.ok(ok.json.data.sourceDirectoryUntouched);

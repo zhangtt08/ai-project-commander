@@ -139,8 +139,8 @@ export function buildRouter(app) {
   r.delete('/api/projects/:id', ({ params, query }) => {
     if (query.mode !== 'record_only') {
       throw new ValidationError(
-      'refusing to delete: pass ?mode=record_only — Commander never deletes source directories',
-      [{ path: 'mode', message: 'record_only deletes only Commander database rows' }],
+      '拒绝删除：请传 ?mode=record_only —— Commander 绝不会删除源码目录',
+      [{ path: 'mode', message: 'record_only 仅删除 Commander 自身的数据库记录' }],
     );
     }
     return app.deleteProjectRecord(params.id);

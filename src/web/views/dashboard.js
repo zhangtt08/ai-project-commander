@@ -7,9 +7,12 @@ function runCell(run, suite) {
   if (!run) return h('span', { class: 'muted small', text: '未运行' });
   const total = run.total || 0;
   const cls = run.status === 'pass' ? 'badge-pass' : run.status === 'fail' || run.status === 'error' ? 'badge-fail' : 'badge-unknown';
+  const ZH = { unit: '单元', integration: '集成', e2e: '端到端' };
   const label = run.status === 'unsupported' ? '不适用' : total ? `${run.passed}/${run.total}` : run.status;
-  return h('span', { class: `badge ${cls}`, title: run.command || '', text: `${suite}: ${label}` });
+  return h('span', { class: `badge ${cls}`, title: run.command || '', text: `${ZH[suite] || suite}：${label}` });
 }
+
+const STATUS_ZH = { planning: '规划中', developing: '开发中', testing: '测试中', review: '评审中', blocked: '已阻塞', ready: '就绪', released: '已发布', archived: '已归档' };
 
 function projectCard(cardData) {
   const meta = cardData;
@@ -31,10 +34,10 @@ function projectCard(cardData) {
     ]),
     h('div', { class: 'path', text: meta.workspacePath }),
     h('div', { class: 'proj-stats' }, [
-      h('span', {}, [h('span', { class: 'muted', text: '阶段 ' }), h('b', { text: meta.currentStage || 'unknown' })]),
-      h('span', {}, [h('span', { class: 'muted', text: '状态 ' }), h('b', { text: meta.status })]),
+      h('span', {}, [h('span', { class: 'muted', text: '阶段 ' }), h('b', { text: meta.currentStage || '未知' })]),
+      h('span', {}, [h('span', { class: 'muted', text: '状态 ' }), h('b', { text: STATUS_ZH[meta.status] || meta.status })]),
       h('span', {}, [h('span', { class: 'muted', text: '任务 ' }), h('b', { text: `${meta.taskSummary.done}/${meta.taskSummary.total}` })]),
-      h('span', {}, [h('span', { class: 'muted', text: '风险 ' }), h('b', { text: `${meta.riskSummary.bySeverity.critical}c / ${meta.riskSummary.bySeverity.high}h` })]),
+      h('span', {}, [h('span', { class: 'muted', text: '风险 ' }), h('b', { text: `${meta.riskSummary.bySeverity.critical} 危急 / ${meta.riskSummary.bySeverity.high} 高` })]),
       meta.git ? h('span', {}, [h('span', { class: 'muted', text: 'git ' }), h('b', { text: `${meta.git.branch}${meta.git.clean ? '' : ` (${meta.git.changed + meta.git.untracked} dirty)`}` })]) : null,
     ]),
     h('div', { class: 'row wrap' }, [
@@ -45,7 +48,7 @@ function projectCard(cardData) {
       meta.drift && meta.drift.verdict === 'possible_drift' ? h('span', { class: 'badge badge-warning', text: `drift: ${meta.drift.count}` }) : null,
       meta.regressionSummary && meta.regressionSummary.count ? h('span', { class: 'badge badge-critical', text: `${meta.regressionSummary.count} regression` }) : null,
     ]),
-    progressBar({ percent: meta.progress ? meta.progress.percent : null, reason: meta.progress ? meta.progress.reason : 'not computed' }),
+    progressBar({ percent: meta.progress ? meta.progress.percent : null, reason: meta.progress ? meta.progress.reason : '尚未计算' }),
     h('div', { class: 'small muted' }, `最近活动 ${fmt.rel(meta.lastActivity)} · 分析于 ${fmt.rel(meta.lastAnalyzedAt)}`),
     meta.nextAction ? h('div', { class: 'small' }, [
       h('span', { class: 'muted', text: '下一步：' }),

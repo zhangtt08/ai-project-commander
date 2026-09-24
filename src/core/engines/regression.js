@@ -7,6 +7,8 @@ import {
   REGRESSION_TYPE, SEVERITY, RUN_STATUS, BUILD_STATUS, STAGE_STATUS, SEVERITY_RANK,
 } from '../../domain/constants.js';
 import { sha1 } from '../util.js';
+
+const ZH_SUITE = { unit: '单元', integration: '集成', e2e: '端到端' };
 import { evSnapshot, evTest, evCommand } from '../evidence.js';
 
 function reg(type, severity, title, before, after, evidence, suggestedAction) {
@@ -38,11 +40,11 @@ export function detectRegressions({ previous = null, current } = {}) {
   if (prevBuild && curBuild) {
     if (prevBuild.status === BUILD_STATUS.PASS && curBuild.status === BUILD_STATUS.FAIL) {
       out.push(reg(REGRESSION_TYPE.BUILD_PASS_TO_FAIL, SEVERITY.CRITICAL,
-        'Build regressed from PASS to FAIL',
+        '构建从通过退化为失败',
         { status: prevBuild.status, command: prevBuild.command },
         { status: curBuild.status, command: curBuild.command, exitCode: curBuild.exitCode },
         [evSnapshot(previous.id), evCommand(curBuild.command || prevBuild.command)],
-        'Fix the build immediately — every other signal is unreliable until it is green.'));
+        '立即修复构建——构建不绿之前，其他信号都不可靠。'));
     }
   }
 
@@ -52,31 +54,31 @@ export function detectRegressions({ previous = null, current } = {}) {
     if (!prevRun || !curRun) continue;
     if (prevRun.status === RUN_STATUS.PASS && (curRun.status === RUN_STATUS.FAIL || curRun.status === RUN_STATUS.ERROR)) {
       out.push(reg(REGRESSION_TYPE.TESTS_PASS_TO_FAIL, key === 'e2e' ? SEVERITY.HIGH : SEVERITY.CRITICAL,
-        `${key} tests regressed from PASS to FAIL`,
+        `${ZH_SUITE[key]}测试从通过退化为失败`,
         { status: prevRun.status, total: prevRun.total, passed: prevRun.passed, failed: prevRun.failed },
         { status: curRun.status, total: curRun.total, passed: curRun.passed, failed: curRun.failed, framework: curRun.framework },
         [evSnapshot(previous.id), evTest(key)],
-        `Repair the ${key} failures before advancing the stage.`));
+        `在推进阶段之前，先修复${ZH_SUITE[key]}的失败。`));
       continue;
     }
     const prevPassed = prevRun.passed || 0;
     const curPassed = curRun.passed || 0;
     if (prevPassed > curPassed && (prevRun.total || 0) === (curRun.total || 0) && (prevRun.total || 0) > 0) {
       out.push(reg(REGRESSION_TYPE.PASSED_COUNT_DROP, SEVERITY.HIGH,
-        `${key}: passing test count dropped from ${prevPassed} to ${curPassed}`,
+        `${ZH_SUITE[key]}：通过数从 ${prevPassed} 降到 ${curPassed}`,
         { passed: prevPassed, total: prevRun.total, status: prevRun.status },
         { passed: curPassed, total: curRun.total, status: curRun.status },
         [evSnapshot(previous.id), evTest(key)],
-        'Identify which tests stopped passing and fix them.'));
+        '找出不再通过的测试并修复。'));
     }
     const prevTotal = prevRun.total || 0;
     const curTotal = curRun.total || 0;
     if (prevTotal >= 5 && curTotal > 0 && curTotal < prevTotal * 0.8) {
       out.push(reg(REGRESSION_TYPE.TEST_COUNT_DROP, SEVERITY.HIGH,
-        `${key}: total test count dropped from ${prevTotal} to ${curTotal}`,
+        `${ZH_SUITE[key]}：测试总数从 ${prevTotal} 降到 ${curTotal}`,
         { total: prevTotal }, { total: curTotal },
         [evSnapshot(previous.id), evTest(key)],
-        'Tests appear to have been removed. Confirm this was intentional; a silent test deletion is treated as a regression.'));
+        '测试似乎被删除了。请确认这是有意的；静默删除测试会被视为回归。'));
     }
   }
 
@@ -97,28 +99,28 @@ export function detectRegressions({ previous = null, current } = {}) {
   const curCritical = (current.risks || []).filter((r) => r.status === 'open' && r.severity === SEVERITY.CRITICAL).length;
   if (curCritical > prevCritical) {
     out.push(reg(REGRESSION_TYPE.CRITICAL_RISK_INCREASED, SEVERITY.HIGH,
-      `Critical risks increased from ${prevCritical} to ${curCritical}`,
+      `危急风险从 ${prevCritical} 增加到 ${curCritical}`,
       { critical: prevCritical }, { critical: curCritical },
       [evSnapshot(previous.id)],
-      'Open the Risks tab and clear the new critical risks.'));
+      '打开风险面板，清除新增的危急风险。'));
   }
 
   if (current.metadata && previous.file_count) {
     if (current.metadata.fileCount < previous.file_count && previous.file_count - current.metadata.fileCount >= 5) {
       out.push(reg(REGRESSION_TYPE.KEY_FILE_DELETED, SEVERITY.MEDIUM,
-        `Workspace file count dropped from ${previous.file_count} to ${current.metadata.fileCount}`,
+        `工作区文件数从 ${previous.file_count} 降到 ${current.metadata.fileCount}`,
         { fileCount: previous.file_count }, { fileCount: current.metadata.fileCount },
         [evSnapshot(previous.id)],
-        'Verify that no important files were deleted.'));
+        '请核实没有删除重要文件。'));
     }
   }
 
   if (previous.gate_json && current.gate && previous.gate_json.result === 'PASS' && current.gate.result !== 'PASS') {
     out.push(reg(REGRESSION_TYPE.ACCEPTANCE_INVALIDATED, SEVERITY.HIGH,
-      `Acceptance gate regressed from ${previous.gate_json.result} to ${current.gate.result}`,
+      `验收门从 ${previous.gate_json.result} 退化为 ${current.gate.result}`,
       { result: previous.gate_json.result }, { result: current.gate.result, explanation: current.gate.explanation },
       [evSnapshot(previous.id)],
-      'The stage can no longer advance. Fix the failing gate checks.'));
+      '该阶段无法再推进。请修复失败的门禁检查。'));
   }
 
   return out.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);

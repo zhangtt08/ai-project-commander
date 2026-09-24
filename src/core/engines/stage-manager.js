@@ -56,20 +56,20 @@ export class StageManager {
           stages: [],
           strategy: 'none',
           confidence: CONFIDENCE.UNKNOWN,
-          note: 'No stage declarations found in specs and no tasks exist yet — stage is Unknown.',
+          note: '规范中没有阶段声明，也不存在任务——阶段未知。',
         };
       }
       return {
         stages: [{
-          name: 'Unplanned work',
+          name: '未规划的工作',
           index: 1,
-          description: 'Tasks exist but no stage structure could be inferred from the documentation.',
+          description: '存在任务，但无法从文档推断出阶段结构。',
           evidence: [],
           confidence: CONFIDENCE.LOW,
         }],
         strategy: 'task_bucket',
         confidence: CONFIDENCE.LOW,
-        note: 'Stage structure is inferred from the task ledger only.',
+        note: '阶段结构仅根据任务账本推断。',
       };
     }
 

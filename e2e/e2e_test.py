@@ -79,7 +79,7 @@ def overview(page):
     assert "下一步建议行动" in body
     assert "验收门：" in body
     # The gate must explain itself, not just show FAIL.
-    assert "cannot advance" in body or "may advance" in body
+    assert "无法推进" in body or "可以推进到下一阶段" in body
 
 
 @step("tests tab shows 22/25 e2e with failing cases")

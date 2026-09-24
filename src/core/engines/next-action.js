@@ -37,9 +37,9 @@ function action({ rule, priority, objective, reason, scope = [], relevantFiles =
 }
 
 const BASE_CONSTRAINTS = [
-  'Do not delete, skip or weaken existing tests to make the suite pass.',
-  'Do not modify the project specification unless the acceptance criteria genuinely changed.',
-  'Keep the change set scoped to the objective.',
+  '不得删除、跳过或弱化现有测试来让测试套件通过。',
+  '除非验收标准确实变化，否则不得修改项目规范。',
+  '变更范围仅限于上述目标。',
 ];
 
 export class NextActionEngine {
@@ -66,12 +66,12 @@ export class NextActionEngine {
       return action({
         rule: 'build_failed',
         priority: TASK_PRIORITY.P0,
-        objective: 'Restore a passing build',
-        reason: `The build command \`${build.command}\` exits ${build.exitCode}. While the build is red, no test, health or gate signal can be trusted.`,
-        scope: ['Reproduce the build failure locally', 'Fix the compile/bundle error at its root cause', 'Re-run the build to green'],
+        objective: '恢复构建通过',
+        reason: `构建命令 \`${build.command}\` 退出码为 ${build.exitCode}。构建不通过时，测试、健康与验收门的所有信号都不可信。`,
+        scope: ['在本地复现构建失败', '从根源修复编译/打包错误', '重新运行构建直至通过'],
         relevantFiles,
         constraints: BASE_CONSTRAINTS,
-        acceptance: ['Build exits with code 0', 'No test was disabled to make the build pass'],
+        acceptance: ['构建退出码为 0', '没有为了通过构建而禁用任何测试'],
         verification: [build.command || 'npm run build'],
         risks: openRisks.slice(0, 5).map((r) => `${r.title}`),
         evidence: [evCommand(build.command)],
@@ -83,12 +83,12 @@ export class NextActionEngine {
       return action({
         rule: 'unit_failed',
         priority: TASK_PRIORITY.P0,
-        objective: `Fix the ${unit.failed} failing unit test${unit.failed === 1 ? '' : 's'}`,
-        reason: `Unit tests report ${unit.failed} failure(s) out of ${unit.total} (${unit.framework}). Unit failures localise the defect, so they must be resolved before end-to-end work.`,
+        objective: `修复 ${unit.failed} 个失败的单元测试`,
+        reason: `单元测试 ${unit.total} 个中有 ${unit.failed} 个失败（${unit.framework}）。单元失败能定位缺陷，必须先于端到端工作解决。`,
         scope: (ctx.failedCases || []).filter((c) => c.suite === 'unit').slice(0, 8).map((c) => `Fix: ${c.name}`),
         relevantFiles,
         constraints: BASE_CONSTRAINTS,
-        acceptance: [`All ${unit.total} unit tests pass`, 'No test was deleted or marked skipped'],
+        acceptance: [`全部 ${unit.total} 个单元测试通过`, '没有删除或跳过任何测试'],
         verification: [unit.command || 'npm test'],
         risks: openRisks.slice(0, 5).map((r) => r.title),
         evidence: [evTest('unit'), ...(ctx.failedCases || []).slice(0, 3).map((c) => evTest(c.name))],
@@ -100,12 +100,12 @@ export class NextActionEngine {
       return action({
         rule: 'e2e_failed',
         priority: TASK_PRIORITY.P0,
-        objective: `Repair the ${e2e.failed} failing end-to-end test${e2e.failed === 1 ? '' : 's'} blocking the acceptance gate`,
-        reason: `Unit tests are green${unit ? ` (${unit.passed}/${unit.total})` : ''} but E2E reports ${e2e.passed}/${e2e.total}, so ${gate && gate.result !== GATE_RESULT.PASS ? 'the acceptance gate cannot pass' : 'the user-facing flows are unverified'}.`,
+        objective: `修复阻塞验收门的 ${e2e.failed} 个失败端到端测试`,
+        reason: `单元测试已通过${unit ? `（${unit.passed}/${unit.total}）` : ''}，但端到端为 ${e2e.passed}/${e2e.total}，因此${gate && gate.result !== GATE_RESULT.PASS ? '验收门无法通过' : '面向用户的流程未被验证'}。`,
         scope: (ctx.failedCases || []).filter((c) => c.suite === 'e2e').slice(0, 8).map((c) => `Fix: ${c.name}${c.file ? ` (${c.file})` : ''}`),
         relevantFiles,
         constraints: BASE_CONSTRAINTS,
-        acceptance: [`E2E reaches ${e2e.total}/${e2e.total} PASS`, 'Unit tests remain green', 'No E2E test was deleted or skipped'],
+        acceptance: [`端到端测试达到 ${e2e.total}/${e2e.total} 通过`, '单元测试保持通过', '没有删除或跳过任何端到端测试'],
         verification: [e2e.command || 'npm run test:e2e', unit && unit.command ? unit.command : 'npm test'],
         risks: openRisks.slice(0, 5).map((r) => r.title),
         evidence: [evTest('e2e'), ...(ctx.failedCases || []).slice(0, 3).map((c) => evTest(c.name))],
@@ -117,12 +117,12 @@ export class NextActionEngine {
       return action({
         rule: 'integration_failed',
         priority: TASK_PRIORITY.P0,
-        objective: `Fix the ${integration.failed} failing integration test${integration.failed === 1 ? '' : 's'}`,
-        reason: `Integration tests report ${integration.failed} of ${integration.total} failing (${integration.framework}).`,
+        objective: `修复 ${integration.failed} 个失败的集成测试`,
+        reason: `集成测试 ${integration.total} 个中有 ${integration.failed} 个失败（${integration.framework}）。`,
         scope: (ctx.failedCases || []).filter((c) => c.suite === 'integration').slice(0, 8).map((c) => `Fix: ${c.name}`),
         relevantFiles,
         constraints: BASE_CONSTRAINTS,
-        acceptance: [`All ${integration.total} integration tests pass`],
+        acceptance: [`全部 ${integration.total} 个集成测试通过`],
         verification: [integration.command || 'npm run test:integration'],
         evidence: [evTest('integration')],
       });
@@ -134,12 +134,12 @@ export class NextActionEngine {
       return action({
         rule: 'critical_risk',
         priority: TASK_PRIORITY.P0,
-        objective: `Resolve critical risk: ${worst.title}`,
-        reason: `${criticalRisks.length} open critical risk(s) exist. ${worst.description}`,
-        scope: criticalRisks.map((r) => `${r.title} — ${r.suggested_action || 'no suggested action recorded'}`),
+        objective: `消除危急风险：${worst.title}`,
+        reason: `存在 ${criticalRisks.length} 个未解决的危急风险。${worst.description}`,
+        scope: criticalRisks.map((r) => `${r.title} —— ${r.suggested_action || '未记录建议操作'}`),
         relevantFiles,
         constraints: BASE_CONSTRAINTS,
-        acceptance: ['All critical risks are resolved or explicitly accepted', 'No new critical risk is introduced'],
+        acceptance: ['所有危急风险已解决或被明确接受', '没有引入新的危急风险'],
         verification: failedCommands.length ? failedCommands : ['npm run build', 'npm test'],
         risks: criticalRisks.map((r) => r.title),
         evidence: criticalRisks.flatMap((r) => r.evidence || []).slice(0, 5),
@@ -152,12 +152,12 @@ export class NextActionEngine {
       return action({
         rule: 'regression',
         priority: TASK_PRIORITY.P0,
-        objective: `Investigate regression: ${worst.title}`,
-        reason: `A regression was detected between two snapshots (${worst.type}). ${worst.suggested_action || ''}`.trim(),
+        objective: `排查回归：${worst.title}`,
+        reason: `在两个快照之间检测到回归（${worst.type}）。${worst.suggested_action || ''}`.trim(),
         scope: regressions.map((r) => `${r.type}: ${r.title}`),
         relevantFiles,
         constraints: [...BASE_CONSTRAINTS, 'Restore the previous behaviour rather than adjusting the expectations.'],
-        acceptance: ['The regressed metric returns to its previous value', 'The fix is covered by a test'],
+        acceptance: ['回归指标恢复到之前的值', '修复有测试覆盖'],
         verification: failedCommands.length ? failedCommands : ['npm run build', 'npm test'],
         risks: highRisks.map((r) => r.title),
         evidence: worst.evidence || [evSnapshot(worst.before && worst.before.id)],
@@ -170,12 +170,12 @@ export class NextActionEngine {
       return action({
         rule: 'drift',
         priority: TASK_PRIORITY.P1,
-        objective: `Verify possible specification drift: ${worst.title}`,
-        reason: `Drift analysis flagged ${drift.drifts.length} signal(s). ${worst.description}`,
+        objective: `核实可能的规范漂移：${worst.title}`,
+        reason: `漂移分析标记了 ${drift.drifts.length} 个信号。${worst.description}`,
         scope: drift.drifts.slice(0, 6).map((d) => `${d.title} — ${d.description}`),
         relevantFiles,
-        constraints: [...BASE_CONSTRAINTS, 'If the drift is intentional, update the specification instead of the code.'],
-        acceptance: ['Each drift signal is either resolved or documented as intentional', 'Specification and code agree'],
+        constraints: [...BASE_CONSTRAINTS, '如果漂移是有意的，请更新规范而不是代码。'],
+        acceptance: ['每个漂移信号都被解决或记录为有意为之', '规范与代码保持一致'],
         verification: ['npm run build', 'npm test'],
         evidence: worst.evidence || [],
       });
@@ -186,12 +186,12 @@ export class NextActionEngine {
       return action({
         rule: 'blocked_task',
         priority: TASK_PRIORITY.P1,
-        objective: `Unblock: ${blockedTasks[0].title}`,
-        reason: `${blockedTasks.length} task(s) are blocked${currentStage ? ` and are stalling stage "${currentStage.name}"` : ''}.`,
+        objective: `解除阻塞：${blockedTasks[0].title}`,
+        reason: `${blockedTasks.length} 个任务被阻塞${currentStage ? `，正在拖累阶段“${currentStage.name}”` : ''}。`,
         scope: blockedTasks.map((t) => t.title),
         relevantFiles,
         constraints: BASE_CONSTRAINTS,
-        acceptance: ['The blocking dependency is resolved or the task is re-scoped and unblocked'],
+        acceptance: ['阻塞依赖已解除，或任务已重新界定范围并解除阻塞'],
         verification: failedCommands.length ? failedCommands : ['npm test'],
         evidence: blockedTasks.slice(0, 3).map((t) => evTask(t.id)),
       });
@@ -202,7 +202,7 @@ export class NextActionEngine {
       return action({
         rule: 'gate_failed',
         priority: TASK_PRIORITY.P1,
-        objective: `Clear the acceptance gate for ${currentStage ? currentStage.name : 'the current stage'}`,
+        objective: `通过${currentStage ? `“${currentStage.name}”` : '当前阶段'}的验收门`,
         reason: gate.explanation,
         scope: gate.checks.filter((c) => c.status !== GATE_RESULT.PASS).map((c) => `${c.name}: ${c.detail}`),
         relevantFiles,
@@ -221,11 +221,11 @@ export class NextActionEngine {
         rule: 'open_task',
         priority: next.priority || TASK_PRIORITY.P2,
         objective: String(next.title).slice(0, 200),
-        reason: `${openTasks.length} open task(s) remain in the ledger. This is the highest-priority item (${next.priority}, source: ${next.source}).`,
+        reason: `账本中还有 ${openTasks.length} 个未完成任务。这是优先级最高的一项（优先级 ${next.priority}，来源 ${next.source}）。`,
         scope: [String(next.description || next.title).slice(0, 400)],
         relevantFiles,
         constraints: BASE_CONSTRAINTS,
-        acceptance: ['The task is implemented and reflected in the ledger', 'Existing tests remain green'],
+        acceptance: ['任务已实现并反映在账本中', '现有测试保持通过'],
         verification: failedCommands.length ? failedCommands : ['npm run build', 'npm test'],
         evidence: (next.evidence && next.evidence.length ? next.evidence : [evTask(next.id)]),
       });
@@ -238,12 +238,12 @@ export class NextActionEngine {
         return action({
           rule: 'next_stage',
           priority: TASK_PRIORITY.P2,
-          objective: `Begin stage "${notStarted.name}"`,
-          reason: `All work in the current stage is complete and "${notStarted.name}" has not started yet.`,
-          scope: [notStarted.description || `Define and execute the work for ${notStarted.name}`],
+          objective: `开始阶段“${notStarted.name}”`,
+          reason: `当前阶段的工作已全部完成，而“${notStarted.name}”尚未开始。`,
+          scope: [notStarted.description || `定义并执行“${notStarted.name}”的工作`],
           relevantFiles,
-          constraints: [...BASE_CONSTRAINTS, 'Do not start work that belongs to a later stage.'],
-          acceptance: [`Tasks for "${notStarted.name}" are defined in the ledger`, 'Build and tests remain green'],
+          constraints: [...BASE_CONSTRAINTS, '不要开始属于后续阶段的工作。'],
+          acceptance: [`“${notStarted.name}”的任务已在账本中定义`, '构建与测试保持通过'],
           verification: failedCommands.length ? failedCommands : ['npm run build', 'npm test'],
           evidence: [],
         });
@@ -255,16 +255,16 @@ export class NextActionEngine {
     return action({
       rule: 'no_spec',
       priority: TASK_PRIORITY.P3,
-      objective: hasSpec ? 'Extend the specification with the next milestone' : 'Create a specification so progress can be measured',
+      objective: hasSpec ? '在规范中补充下一个里程碑' : '创建规范文档，使进度可被度量',
       reason: hasSpec
-        ? 'No open tasks, no gate failures and no risks were found. The specification must define the next unit of work.'
-        : 'No specification document was found in this workspace, so Commander has no baseline to measure progress, acceptance or drift against.',
+        ? '没有未完成任务、没有门禁失败、也没有风险。规范必须定义下一个工作单元。'
+        : '在工作区中未找到规范文档，Commander 缺少度量进度、验收与漂移的基准。',
       scope: hasSpec
-        ? ['Add the next milestone/stage to the specification', 'Derive tasks from it']
-        : ['Add SPEC.md with Goals, Requirements and Acceptance Criteria', 'Re-run a full scan'],
+        ? ['在规范中添加下一个里程碑/阶段', '从中推导任务']
+        : ['添加包含目标、需求与验收标准的 SPEC.md', '重新运行全量扫描'],
       relevantFiles: relevantFiles.length ? relevantFiles : ['SPEC.md'],
       constraints: BASE_CONSTRAINTS,
-      acceptance: hasSpec ? ['New stage is declared in the specification'] : ['SPEC.md exists with at least one acceptance criterion'],
+      acceptance: hasSpec ? ['新阶段已在规范中声明'] : ['SPEC.md 已存在且至少包含一条验收标准'],
       verification: failedCommands.length ? failedCommands : ['npm run build', 'npm test'],
       evidence: specs.slice(0, 2).map((s) => evSpec(s.path)),
       confidence: CONFIDENCE.MEDIUM,

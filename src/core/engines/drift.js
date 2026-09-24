@@ -15,8 +15,8 @@ export function detectDrift({
 
   if (!hasSpec && tasks.length > 0) {
     drifts.push({
-      title: 'Work is happening without a written specification',
-      description: `${tasks.length} task(s) exist but no specification document was found. There is no baseline to measure drift against.`,
+      title: '在没有书面规范的情况下开展工作',
+      description: `存在 ${tasks.length} 个任务，但未找到规范文档，缺少度量漂移的基准。`,
       severity: SEVERITY.MEDIUM,
       requirementRef: '',
       confidence: CONFIDENCE.HIGH,
@@ -31,8 +31,8 @@ export function detectDrift({
 
   if (hasSpec && requirements.length && !satisfied.length) {
     drifts.push({
-      title: 'Requirements have no satisfied evidence',
-      description: `${requirements.length} requirement(s) were extracted but no acceptance criterion is marked satisfied, and no implementation evidence was linked.`,
+      title: '需求没有任何满足证据',
+      description: `提取到 ${requirements.length} 条需求，但没有验收标准被标记为已满足，也没有关联任何实现证据。`,
       severity: SEVERITY.MEDIUM,
       requirementRef: requirements[0].requirement_ref || '',
       confidence: CONFIDENCE.MEDIUM,
@@ -51,8 +51,8 @@ export function detectDrift({
     });
     if (!linked && tokens.length >= 2) {
       drifts.push({
-        title: `Requirement ${req.requirement_ref || ''} has no linked work`.trim(),
-        description: `No task or code hint references "${String(req.text).slice(0, 120)}". The requirement may be unimplemented.`,
+        title: `需求 ${req.requirement_ref || ''} 没有关联工作`.trim(),
+        description: `没有任务或代码线索引用“${String(req.text).slice(0, 120)}”。该需求可能尚未实现。`,
         severity: SEVERITY.LOW,
         requirementRef: req.requirement_ref || '',
         confidence: CONFIDENCE.LOW,
@@ -67,8 +67,8 @@ export function detectDrift({
     const prevRoleCounts = previous.roleCounts || null;
     if (prevRoleCounts && prevRoleCounts.test != null && metadata.roleCounts && metadata.roleCounts.test < prevRoleCounts.test) {
       drifts.push({
-        title: 'Test files were removed',
-        description: `Test file count dropped from ${prevRoleCounts.test} to ${metadata.roleCounts.test}. Removing tests to make a suite pass is a drift signal.`,
+        title: '测试文件被移除',
+        description: `测试文件数从 ${prevRoleCounts.test} 降到 ${metadata.roleCounts.test}。为了让测试套件通过而删除测试，是漂移信号。`,
         severity: SEVERITY.HIGH,
         requirementRef: '',
         confidence: CONFIDENCE.HIGH,
@@ -85,8 +85,8 @@ export function detectDrift({
       const unrelated = changed.filter((p) => !tasks.some((t) => t.title.toLowerCase().includes(p.split('/').pop().toLowerCase().replace(/\.[a-z]+$/, ''))));
       if (unrelated.length > changed.length * 0.8) {
         drifts.push({
-          title: 'Large change set with no traceable link to planned work',
-          description: `${unrelated.length} of ${changed.length} changed files cannot be linked to any task in the ledger. This may be scope creep.`,
+          title: '大量变更与计划工作无关联',
+          description: `${changed.length} 个变更文件中有 ${unrelated.length} 个无法关联到账本中的任何任务，可能存在范围蔓延。`,
           severity: SEVERITY.MEDIUM,
           requirementRef: '',
           confidence: CONFIDENCE.LOW,
@@ -101,8 +101,8 @@ export function detectDrift({
   const allGreen = unit && unit.status === 'pass' && (!e2e || e2e.status === 'pass' || e2e.status === 'unsupported');
   if (allGreen && unmet.length >= 2) {
     drifts.push({
-      title: 'Tests are green while acceptance criteria remain unmet',
-      description: `${unmet.length} acceptance criteria are unmet even though the test suites pass. The tests may not cover the promised behaviour.`,
+      title: '测试全绿但验收标准仍未满足',
+      description: `尽管测试套件通过，仍有 ${unmet.length} 条验收标准未满足。测试可能没有覆盖承诺的行为。`,
       severity: SEVERITY.MEDIUM,
       requirementRef: unmet[0].requirement_ref || '',
       confidence: CONFIDENCE.MEDIUM,
@@ -119,8 +119,8 @@ export function detectDrift({
     drifts,
     verdict,
     note: drifts.length
-      ? 'Possible Drift — these are heuristics based on file and task evidence. Verify before acting.'
-      : (hasSpec ? 'No drift signals detected against the current specification.' : 'No specification baseline found, so drift cannot be assessed.'),
+      ? '可能存在漂移——这些是基于文件与任务证据的启发式判断，请先核实再行动。'
+      : (hasSpec ? '未检测到与当前规范相悖的漂移信号。' : '未找到规范基线，无法评估漂移。'),
     analyzedAt: new Date().toISOString(),
   };
 }
