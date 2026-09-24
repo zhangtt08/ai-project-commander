@@ -1,8 +1,11 @@
 /** Hash router. Small, explicit, dependency-free. */
+let activeRouter = null;
+
 export class Router {
   constructor() {
     this.routes = [];
     this.current = null;
+    activeRouter = this;
     window.addEventListener('hashchange', () => this.#dispatch());
   }
 
@@ -36,6 +39,12 @@ export class Router {
     return { route: null, params: {}, query, path };
   }
 
+  /** Re-dispatch the current route through the active router instance. */
+  static reload() {
+    if (activeRouter) return activeRouter.#dispatch();
+    window.location.reload();
+  }
+
   start() { this.#dispatch(); return this; }
 
   async #dispatch() {
@@ -53,6 +62,4 @@ export class Router {
       renderFatal(err, matched);
     }
   }
-
-  reload() { return this.#dispatch(); }
 }
