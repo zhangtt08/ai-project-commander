@@ -20,7 +20,8 @@ const EXT_LANG = {
   '.py': 'Python', '.go': 'Go', '.rs': 'Rust', '.java': 'Java', '.rb': 'Ruby',
   '.cs': 'C#', '.php': 'PHP', '.swift': 'Swift', '.kt': 'Kotlin', '.vue': 'Vue',
   '.svelte': 'Svelte', '.css': 'CSS', '.scss': 'SCSS', '.html': 'HTML',
-  '.sql': 'SQL', '.sh': 'Shell', '.ps1': 'PowerShell', '.json': 'JSON', '.md': 'Markdown',
+  '.sql': 'SQL', '.sh': 'Shell', '.ps1': 'PowerShell', '.bat': 'Batch', '.cmd': 'Batch',
+  '.json': 'JSON', '.md': 'Markdown',
 };
 
 const CODE_FILE_ROLE = (rel) => {

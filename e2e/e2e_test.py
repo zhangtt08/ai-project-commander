@@ -46,8 +46,8 @@ def step(name):
 @step("open the dashboard and see three demo projects")
 def dashboard(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
-    expect(page.locator("h1")).to_contain_text("Dashboard", timeout=20000)
-    expect(page.locator(".metric").filter(has_text="Projects").locator(".value")).to_have_text("3", timeout=20000)
+    expect(page.locator("h1")).to_contain_text("仪表盘", timeout=20000)
+    expect(page.locator(".metric").filter(has_text="项目数").locator(".value")).to_have_text("3", timeout=20000)
     expect(page.locator(".proj-card")).to_have_count(3)
     expect(page.locator(".proj-card").filter(has_text="ShopFlow Web")).to_be_visible()
     assert page.locator(".proj-card").filter(has_text="Legacy Billing").count() == 1
@@ -58,7 +58,7 @@ def dashboard(page):
 @step("attention center lists the failing project first")
 def attention(page):
     page.goto(BASE + "/#/attention", wait_until="domcontentloaded")
-    expect(page.locator("h1")).to_contain_text("Attention Center", timeout=15000)
+    expect(page.locator("h1")).to_contain_text("关注中心", timeout=15000)
     page.wait_for_selector(".risk-item", timeout=15000)
     items = page.locator(".risk-item")
     assert items.count() >= 3
@@ -75,16 +75,16 @@ def overview(page):
     expect(page.locator("h1")).to_contain_text("FitPlan Tracker", timeout=15000)
     page.wait_for_selector(".metric", timeout=15000)
     body = page.inner_text("body")
-    assert "Acceptance Gate" in body
-    assert "Next recommended action" in body
-    assert "gate:" in body.lower()
+    assert "验收门" in body
+    assert "下一步建议行动" in body
+    assert "验收门：" in body
     # The gate must explain itself, not just show FAIL.
     assert "cannot advance" in body or "may advance" in body
 
 
 @step("tests tab shows 22/25 e2e with failing cases")
 def tests_tab(page):
-    page.locator(".tab", has_text="Tests").click()
+    page.locator(".tab", has_text="测试").click()
     expect(page.locator("body")).to_contain_text("Failing cases", timeout=15000)
     expect(page.locator("body")).to_contain_text("22/25", timeout=15000)
     expect(page.locator("body")).to_contain_text("generates a 7 day plan", timeout=15000)
@@ -93,7 +93,7 @@ def tests_tab(page):
 
 @step("risks tab lists deterministic risks with evidence")
 def risks_tab(page):
-    page.locator(".tab", has_text="Risks").click()
+    page.locator(".tab", has_text="风险").click()
     page.wait_for_selector(".risk-item", timeout=15000)
     expect(page.locator("body")).to_contain_text("TESTS_FAILED_E2E", timeout=15000)
     expect(page.locator("body")).to_contain_text("Suggested action", timeout=15000)
@@ -113,7 +113,7 @@ def issues_tab(page):
 
 @step("tasks can be created and moved through the ledger")
 def tasks_tab(page):
-    page.locator(".tab", has_text="Tasks").click()
+    page.locator(".tab", has_text="任务").click()
     page.fill("input[aria-label='New task title']", "Fix double charge on checkout")
     page.locator("button:has-text('Add')").click()
     expect(page.locator("body")).to_contain_text("Fix double charge on checkout", timeout=15000)
@@ -124,12 +124,12 @@ def tasks_tab(page):
 
 @step("decisions and project memory versioning work")
 def decisions_memory(page):
-    page.locator(".tab", has_text="Decisions").click()
+    page.locator(".tab", has_text="决策").click()
     page.fill("input[aria-label='Decision title']", "Use SQLite for all local state")
     page.fill("textarea[aria-label='Decision']", "One embedded database, versioned migrations, no server.")
     page.locator("button:has-text('Create ADR')").click()
     expect(page.locator("body")).to_contain_text("Use SQLite for all local state", timeout=15000)
-    page.locator(".tab", has_text="Memory").click()
+    page.locator(".tab", has_text="记忆").click()
     expect(page.locator("body")).to_contain_text("Project Memory v", timeout=15000)
     page.fill("input[aria-label='Memory note']", "note recorded by the e2e run")
     page.locator("button:has-text('Create new version')").click()
@@ -139,7 +139,7 @@ def decisions_memory(page):
 
 @step("agent transcript import closes the prompt loop")
 def sessions_tab(page):
-    page.locator(".tab", has_text="Agent Sessions").click()
+    page.locator(".tab", has_text="Agent 会话").click()
     transcript = "$ npm test\nexit code 0\n$ npm run test:e2e\n  22 passed (18.4s)\n  3 failed\nexit code 1\nEdited file: src/planner/weekly.js\n"
     page.fill("textarea[aria-label='Transcript']", transcript)
     page.select_option("select[aria-label='Provider']", "claude_code")
@@ -154,17 +154,17 @@ def next_action(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
     page.locator(".proj-card").filter(has_text="FitPlan Tracker").click()
     page.wait_for_url(re.compile(r"#/projects/[^/]+$"), timeout=15000)
-    page.wait_for_selector("text=Next recommended action", timeout=15000)
+    page.wait_for_selector("text=下一步建议行动", timeout=15000)
     expect(page.locator("body")).to_contain_text("npm run test:e2e", timeout=15000)
-    page.locator(".tab", has_text="Prompts").click()
+    page.locator(".tab", has_text="提示词").click()
     page.wait_for_selector("text=No prompts generated yet", timeout=15000)
 
 
 @step("prompt generation produces all ten sections")
 def generate_prompt(page):
-    page.locator(".tab", has_text="Overview").click()
-    page.wait_for_selector("button:has-text('Generate agent prompt')", timeout=15000)
-    page.locator("button:has-text('Generate agent prompt')").first.click()
+    page.locator(".tab", has_text="概述").click()
+    page.wait_for_selector("button:has-text('生成 Agent 提示词')", timeout=15000)
+    page.locator("button:has-text('生成 Agent 提示词')").first.click()
     page.wait_for_selector(".modal", timeout=30000)
     for section in ["PROJECT CONTEXT", "CURRENT STATE", "OBJECTIVE", "RELEVANT FILES",
                     "KNOWN FAILURES", "CONSTRAINTS", "DO NOT BREAK",
@@ -178,7 +178,7 @@ def generate_prompt(page):
 
 @step("handoff package opens with all sections")
 def handoff(page):
-    page.locator("button:has-text('Handoff')").click()
+    page.locator("button:has-text('交接包')").click()
     page.wait_for_selector(".modal", timeout=30000)
     for section in ["Project Summary", "Architecture", "Current Stage", "Known Issues", "Next Action", "Verification"]:
         expect(page.locator(".modal")).to_contain_text(section, timeout=15000)
@@ -191,18 +191,18 @@ def search(page):
     page.goto(BASE + "/#/search", wait_until="domcontentloaded")
     page.fill("input[aria-label='Search query']", "checkout")
     page.keyboard.press("Enter")
-    page.wait_for_selector("text=Results for", timeout=15000)
-    expect(page.locator("body")).to_contain_text("Results for", timeout=15000)
+    page.wait_for_selector("text=的搜索结果", timeout=15000)
+    expect(page.locator("body")).to_contain_text("的搜索结果", timeout=15000)
 
 
 @step("settings screen renders provider and security info")
 def settings(page):
     page.goto(BASE + "/#/settings", wait_until="domcontentloaded")
-    expect(page.locator("body")).to_contain_text("AI Provider", timeout=20000)
-    expect(page.locator("body")).to_contain_text("Watcher & Scan Limits", timeout=20000)
+    expect(page.locator("body")).to_contain_text("AI 服务", timeout=20000)
+    expect(page.locator("body")).to_contain_text("监控与扫描限制", timeout=20000)
     expect(page.locator("body")).to_contain_text("mock", timeout=20000)
     page.goto(BASE + "/#/security", wait_until="domcontentloaded")
-    expect(page.locator("body")).to_contain_text("Sensitive file protection", timeout=20000)
+    expect(page.locator("body")).to_contain_text("敏感文件保护", timeout=20000)
     expect(page.locator("body")).to_contain_text("never read, stored, logged", timeout=20000)
 
 

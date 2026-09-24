@@ -12,17 +12,17 @@ export const state = {
 };
 
 const NAV = [
-  { group: 'Overview' },
-  { id: 'dashboard', label: 'Dashboard', path: '/' },
-  { id: 'attention', label: 'Attention Center', path: '/attention', countKey: 'attention' },
-  { id: 'projects', label: 'Projects', path: '/projects', countKey: 'projects' },
-  { id: 'search', label: 'Search', path: '/search' },
-  { group: 'Operations' },
-  { id: 'jobs', label: 'Analysis Queue', path: '/jobs' },
-  { id: 'events', label: 'Global Timeline', path: '/events' },
-  { group: 'System' },
-  { id: 'settings', label: 'Settings', path: '/settings' },
-  { id: 'security', label: 'Security', path: '/security' },
+  { group: '概览' },
+  { id: 'dashboard', label: '仪表盘', path: '/' },
+  { id: 'attention', label: '关注中心', path: '/attention', countKey: 'attention' },
+  { id: 'projects', label: '项目', path: '/projects', countKey: 'projects' },
+  { id: 'search', label: '搜索', path: '/search' },
+  { group: '运维' },
+  { id: 'jobs', label: '分析队列', path: '/jobs' },
+  { id: 'events', label: '全局时间线', path: '/events' },
+  { group: '系统' },
+  { id: 'settings', label: '设置', path: '/settings' },
+  { id: 'security', label: '安全模型', path: '/security' },
 ];
 
 export function setTopbar(title, subtitle = '', actions = []) {
@@ -62,9 +62,9 @@ export function applyTheme(theme) {
   const btn = document.getElementById('theme-toggle');
   if (btn) {
     clear(btn);
-    btn.appendChild(h('span', { text: t === 'dark' ? 'Dark' : 'Light' }));
-    btn.title = 'Toggle light / dark theme';
-    btn.setAttribute('aria-label', `Current theme: ${t}. Click to switch.`);
+    btn.appendChild(h('span', { text: t === 'dark' ? '深色' : '浅色' }));
+    btn.title = '切换深色 / 浅色主题';
+    btn.setAttribute('aria-label', `当前主题：${t}，点击切换`);
   }
 }
 

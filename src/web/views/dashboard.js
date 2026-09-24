@@ -4,10 +4,10 @@ import { state, setTopbar, refreshShellData } from '../app.js';
 import { Router } from '../router.js';
 
 function runCell(run, suite) {
-  if (!run) return h('span', { class: 'muted small', text: 'not run' });
+  if (!run) return h('span', { class: 'muted small', text: '未运行' });
   const total = run.total || 0;
   const cls = run.status === 'pass' ? 'badge-pass' : run.status === 'fail' || run.status === 'error' ? 'badge-fail' : 'badge-unknown';
-  const label = run.status === 'unsupported' ? 'n/a' : total ? `${run.passed}/${run.total}` : run.status;
+  const label = run.status === 'unsupported' ? '不适用' : total ? `${run.passed}/${run.total}` : run.status;
   return h('span', { class: `badge ${cls}`, title: run.command || '', text: `${suite}: ${label}` });
 }
 
@@ -24,17 +24,17 @@ function projectCard(cardData) {
     h('div', { class: 'row-between' }, [
       h('div', { class: 'row' }, [
         h('h3', { text: meta.name }),
-        meta.isDemo ? h('span', { class: 'chip', text: 'demo' }) : null,
-        meta.watchPaused ? h('span', { class: 'chip', text: 'watch paused' }) : null,
+        meta.isDemo ? h('span', { class: 'chip', text: '演示' }) : null,
+        meta.watchPaused ? h('span', { class: 'chip', text: '监控已暂停' }) : null,
       ]),
       healthBadge(meta.health),
     ]),
     h('div', { class: 'path', text: meta.workspacePath }),
     h('div', { class: 'proj-stats' }, [
-      h('span', {}, [h('span', { class: 'muted', text: 'stage ' }), h('b', { text: meta.currentStage || 'unknown' })]),
-      h('span', {}, [h('span', { class: 'muted', text: 'status ' }), h('b', { text: meta.status })]),
-      h('span', {}, [h('span', { class: 'muted', text: 'tasks ' }), h('b', { text: `${meta.taskSummary.done}/${meta.taskSummary.total}` })]),
-      h('span', {}, [h('span', { class: 'muted', text: 'risks ' }), h('b', { text: `${meta.riskSummary.bySeverity.critical}c / ${meta.riskSummary.bySeverity.high}h` })]),
+      h('span', {}, [h('span', { class: 'muted', text: '阶段 ' }), h('b', { text: meta.currentStage || 'unknown' })]),
+      h('span', {}, [h('span', { class: 'muted', text: '状态 ' }), h('b', { text: meta.status })]),
+      h('span', {}, [h('span', { class: 'muted', text: '任务 ' }), h('b', { text: `${meta.taskSummary.done}/${meta.taskSummary.total}` })]),
+      h('span', {}, [h('span', { class: 'muted', text: '风险 ' }), h('b', { text: `${meta.riskSummary.bySeverity.critical}c / ${meta.riskSummary.bySeverity.high}h` })]),
       meta.git ? h('span', {}, [h('span', { class: 'muted', text: 'git ' }), h('b', { text: `${meta.git.branch}${meta.git.clean ? '' : ` (${meta.git.changed + meta.git.untracked} dirty)`}` })]) : null,
     ]),
     h('div', { class: 'row wrap' }, [
@@ -46,19 +46,19 @@ function projectCard(cardData) {
       meta.regressionSummary && meta.regressionSummary.count ? h('span', { class: 'badge badge-critical', text: `${meta.regressionSummary.count} regression` }) : null,
     ]),
     progressBar({ percent: meta.progress ? meta.progress.percent : null, reason: meta.progress ? meta.progress.reason : 'not computed' }),
-    h('div', { class: 'small muted' }, `Last activity ${fmt.rel(meta.lastActivity)} · analyzed ${fmt.rel(meta.lastAnalyzedAt)}`),
+    h('div', { class: 'small muted' }, `最近活动 ${fmt.rel(meta.lastActivity)} · 分析于 ${fmt.rel(meta.lastAnalyzedAt)}`),
     meta.nextAction ? h('div', { class: 'small' }, [
-      h('span', { class: 'muted', text: 'Next: ' }),
+      h('span', { class: 'muted', text: '下一步：' }),
       h('span', { text: fmt.truncate(meta.nextAction.objective, 110) }),
     ]) : null,
   ]);
 }
 
 export async function render() {
-  setTopbar('Dashboard', 'Live engineering state across every managed AI coding project.', [
-    h('button', { class: 'btn', text: 'Seed demo projects', onClick: seedDemo }),
-    h('button', { class: 'btn', text: 'Refresh', onClick: () => render() }),
-    h('button', { class: 'btn btn-primary', text: 'Add project', onClick: () => Router.go('/projects') }),
+  setTopbar('仪表盘', '所有受管 AI 编码项目的实时工程状态。', [
+    h('button', { class: 'btn', text: '生成演示项目', onClick: seedDemo }),
+    h('button', { class: 'btn', text: '刷新', onClick: () => render() }),
+    h('button', { class: 'btn btn-primary', text: '添加项目', onClick: () => Router.go('/projects') }),
   ]);
   const view = document.getElementById('view');
 
@@ -68,14 +68,14 @@ export async function render() {
     const criticals = attentionData.items.filter((i) => i.severity === 'critical').length;
     const head = h('div', { class: 'stack' }, [
       h('div', { class: 'grid grid-4' }, [
-        metric('Projects', fmt.num(c.total), { foot: `${c.archived} archived` }),
-        metric('Healthy', fmt.num(c.healthy), { cls: 'ok' }),
-        metric('Warning', fmt.num(c.warning), { cls: c.warning ? 'warn' : '' }),
-        metric('Critical', fmt.num(c.critical), { cls: c.critical ? 'alert' : '' }),
-        metric('Blocked', fmt.num(c.blocked), { cls: c.blocked ? 'alert' : '' }),
-        metric('Attention items', fmt.num(attentionData.items.length), { cls: criticals ? 'alert' : '', foot: `${criticals} critical` }),
+        metric('项目数', fmt.num(c.total), { foot: `${c.archived} 个已归档` }),
+        metric('健康', fmt.num(c.healthy), { cls: 'ok' }),
+        metric('警告', fmt.num(c.warning), { cls: c.warning ? 'warn' : '' }),
+        metric('危急', fmt.num(c.critical), { cls: c.critical ? 'alert' : '' }),
+        metric('阻塞', fmt.num(c.blocked), { cls: c.blocked ? 'alert' : '' }),
+        metric('关注项', fmt.num(attentionData.items.length), { cls: criticals ? 'alert' : '', foot: `${criticals} 个紧急` }),
       ]),
-      card('Needs attention now', attentionData.items.slice(0, 6).length
+      card('需要立即关注', attentionData.items.slice(0, 6).length
         ? h('div', { class: 'stack-sm' }, attentionData.items.slice(0, 6).map((i) => h('div', { class: `risk-item sev-${i.severity}` }, [
           h('div', { class: 'row-between' }, [
             h('strong', { class: 'small', text: i.title }),
@@ -84,15 +84,15 @@ export async function render() {
           i.detail ? h('div', { class: 'small muted', text: fmt.truncate(i.detail, 200) }) : null,
           h('a', { class: 'small', href: `#/projects/${i.projectId}`, text: 'Open project →' }),
         ])))
-        : stateEmpty('Nothing needs attention', 'No critical, blocked, failing or regressed projects right now.'),
-      { actions: [h('a', { class: 'small', href: '#/attention', text: 'View all →' })], hint: `${attentionData.items.length} total` }),
+        : stateEmpty('暂无需关注的事项', '当前没有危急、阻塞、失败或回归的项目。'),
+      { actions: [h('a', { class: 'small', href: '#/attention', text: '查看全部 →' })], hint: `共 ${attentionData.items.length} 条` }),
 
       h('div', { class: 'row-between' }, [
-        h('h2', { style: { fontSize: '13px', margin: '8px 0 0' }, text: `Projects (${data.cards.length})` }),
+        h('h2', { style: { fontSize: '13px', margin: '8px 0 0' }, text: `项目（${data.cards.length}）` }),
       ]),
       data.cards.length
         ? h('div', { class: 'grid grid-2' }, data.cards.map(projectCard))
-        : stateEmpty('No projects yet', 'Add a local workspace, or seed the three demo projects to explore Commander.'),
+        : stateEmpty('还没有项目', '添加一个本地工作区，或先生成三个演示项目体验 Commander。'),
     ]);
     return head;
   }, { loadingLabel: 'Loading dashboard…' });
@@ -100,10 +100,10 @@ export async function render() {
 
 async function seedDemo() {
   try {
-    toast('Seeding demo projects — this runs real builds and tests…', 'info', 8000);
+    toast('正在生成演示项目——会真实执行构建和测试…', 'info', 8000);
     const results = await api.seedDemo({ runCommands: true });
     await refreshShellData();
-    toast(`Demo seed complete: ${results.filter((r) => !r.skipped).length} project(s) analysed`, 'ok');
+    toast(`演示项目生成完成：已分析 ${results.filter((r) => !r.skipped).length} 个项目`, 'ok');
     render();
   } catch (err) {
     toast(`Demo seed failed: ${err.message}`, 'error');

@@ -53,6 +53,13 @@ export class TestAnalyzer {
 
     const parsed = parseTestOutput(res.stdout, res.stderr, { exitCode: res.exitCode, suite });
 
+    // Normalise: if the process failed but the reporter claimed 0 failures while some
+    // tests did not pass, derive the failing count from the totals instead of lying.
+    if (res.exitCode !== 0 && parsed.failed === 0 && parsed.total > parsed.passed) {
+      parsed.failed = parsed.total - parsed.passed;
+      parsed.summaryLine = parsed.summaryLine ? `${parsed.summaryLine} (derived failed=${parsed.failed})` : `derived failed=${parsed.failed}`;
+    }
+
     let status;
     if (res.blocked) status = RUN_STATUS.UNKNOWN;
     else if (res.timedOut) status = RUN_STATUS.TIMEOUT;

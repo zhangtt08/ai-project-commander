@@ -512,8 +512,14 @@ export class Orchestrator {
     });
     queue.register(JOB_TYPE.RISK, async (payload) => this.quickScan(payload.projectId));
     queue.register(JOB_TYPE.AI_ANALYSIS, async (payload) => {
-      if (!this.aiService) throw new Error('AI service is not enabled');
-      return this.aiService.enrichProject(payload.projectId, payload);
+      // AI enrichment is additive: with the provider off (or not wired) this is a
+      // graceful skip, never a failed job.
+      if (!this.aiService) return { skipped: true, reason: 'AI service is not wired in this deployment' };
+      try {
+        return await this.aiService.enrichProject(payload.projectId, payload);
+      } catch (err) {
+        return { skipped: true, reason: err.message };
+      }
     });
     return queue;
   }

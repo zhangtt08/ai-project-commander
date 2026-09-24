@@ -13,23 +13,23 @@ export async function render(query = {}) {
   const submit = () => Router.go(`/search?q=${encodeURIComponent(input.value.trim())}`);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 
-  setTopbar('Search', 'Full-text across every managed project. FTS5 when available, substring fallback otherwise.', [
-    h('button', { class: 'btn btn-primary', text: 'Search', onClick: submit }),
+  setTopbar('搜索', '跨所有受管项目的全文检索。优先 FTS5，不可用时回退子串匹配。', [
+    h('button', { class: 'btn btn-primary', text: '搜索', onClick: submit }),
   ]);
   const view = document.getElementById('view');
   const q = (query.q || '').trim();
 
-  const head = card('Query', h('div', { class: 'row' }, [input, h('button', { class: 'btn', text: 'Go', onClick: submit })]));
+  const head = card('查询', h('div', { class: 'row' }, [input, h('button', { class: 'btn', text: '搜索', onClick: submit })]));
 
   if (!q) {
-    view.replaceChildren(h('div', { class: 'stack' }, [head, stateEmpty('Type a query to search', 'Examples: "checkout", "e2e", "blocked", "auth".')]));
+    view.replaceChildren(h('div', { class: 'stack' }, [head, stateEmpty('输入关键词开始搜索', '例如："checkout"、"e2e"、"阻塞"。')]));
     input.focus();
     return;
   }
 
   await mountAsync(view, () => api.search(q), (data) => h('div', { class: 'stack' }, [
     head,
-    card(`Results for “${q}”`, data.results.length
+    card(`“${q}” 的搜索结果`, data.results.length
       ? h('div', { class: 'stack-sm' }, data.results.map((r) => h('div', { class: 'risk-item sev-info' }, [
         h('div', { class: 'row-between wrap' }, [
           h('div', { class: 'row' }, [
@@ -40,10 +40,10 @@ export async function render(query = {}) {
         ]),
         r.snippet ? h('div', { class: 'small muted', text: r.snippet }) : null,
       ])))
-      : stateEmpty('No matches', 'Try a shorter or broader term.'), {
-      hint: data.fts ? 'FTS5 index' : 'substring fallback',
+      : stateEmpty('没有匹配结果', '试试更短或更宽泛的关键词。'), {
+      hint: data.fts ? 'FTS5 全文索引' : '子串回退',
       actions: [h('a', { class: 'small', href: '#/projects', text: 'All projects →' })],
     }),
-  ]), { loadingLabel: 'Searching…' });
+  ]), { loadingLabel: '正在搜索…' });
 }
 

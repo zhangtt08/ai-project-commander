@@ -3,15 +3,15 @@ import { h, card, table, mountAsync, toast } from '../ui.js';
 import { setTopbar, refreshShellData } from '../app.js';
 
 export async function render() {
-  setTopbar('Settings', 'AI provider, watcher and scan limits. Secrets stay on the server.', [
-    h('button', { class: 'btn', text: 'Refresh', onClick: () => render() }),
+  setTopbar('设置', 'AI 服务、监控与扫描限制。密钥只保存在服务端。', [
+    h('button', { class: 'btn', text: '刷新', onClick: () => render() }),
   ]);
   const view = document.getElementById('view');
   await mountAsync(view, async () => ({ settings: await api.settings(), system: await api.system(), meta: await api.meta() }), ({ settings, system, meta }) => {
     const fields = {
       provider: h('select', { class: 'select', 'aria-label': 'AI provider' }, [
-        h('option', { value: 'mock', selected: (settings['ai.provider'] || 'mock') === 'mock', text: 'mock — deterministic, offline, no API key' }),
-        h('option', { value: 'openai-compatible', selected: settings['ai.provider'] === 'openai-compatible', text: 'openai-compatible — any /chat/completions endpoint' }),
+        h('option', { value: 'mock', selected: (settings['ai.provider'] || 'mock') === 'mock', text: 'mock —— 确定性、离线、无需 API Key' }),
+        h('option', { value: 'openai-compatible', selected: settings['ai.provider'] === 'openai-compatible', text: 'openai-compatible —— 任意 /chat/completions 接口' }),
       ]),
       baseUrl: h('input', { class: 'input', value: settings['ai.baseUrl'] || '', placeholder: 'https://api.openai.com/v1', 'aria-label': 'Base URL' }),
       model: h('input', { class: 'input', value: settings['ai.model'] || 'gpt-4o-mini', 'aria-label': 'Model' }),
@@ -35,39 +35,39 @@ export async function render() {
           'scan.maxFiles': fields.maxFiles.value.trim(),
           'workspace.searchRoots': JSON.stringify(rootsField.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).slice(0, 12)),
         });
-        toast('Settings saved', 'ok');
+        toast('设置已保存', 'ok');
         await refreshShellData();
         render();
       } catch (err) { toast(err.message, 'error'); }
     };
 
-    const providerCard = card('AI Provider', h('div', { class: 'stack' }, [
+    const providerCard = card('AI 服务', h('div', { class: 'stack' }, [
       h('div', { class: 'small muted', text: 'Deterministic facts (git, build, tests, file counts) NEVER come from the AI provider. The provider only summarises, explains and suggests. Every AI response is schema-validated; failures retry once then fall back to the deterministic Mock provider.' }),
       h('div', { class: 'grid grid-2' }, [
-        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: 'Provider' }), fields.provider]),
-        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: 'Model' }), fields.model]),
+        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '提供方' }), fields.provider]),
+        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '模型' }), fields.model]),
       ]),
       h('div', { class: 'grid grid-2' }, [
-        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: 'Base URL' }), fields.baseUrl]),
-        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: 'API key (never returned to the browser)' }), fields.apiKey]),
+        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '接口地址' }), fields.baseUrl]),
+        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: 'API Key（永远不会回传浏览器）' }), fields.apiKey]),
       ]),
       h('div', { class: 'grid grid-2' }, [
-        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: 'Timeout (ms)' }), fields.timeoutMs]),
+        h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '超时（毫秒）' }), fields.timeoutMs]),
       ]),
-      h('div', { class: 'row' }, [h('button', { class: 'btn btn-primary', text: 'Save settings', onClick: save })]),
+      h('div', { class: 'row' }, [h('button', { class: 'btn btn-primary', text: '保存设置', onClick: save })]),
       h('div', { class: 'grid grid-3' }, [
-        h('div', { class: 'metric' }, [h('div', { class: 'label', text: 'Structured calls' }), h('div', { class: 'value sm', text: String(system.aiStats.calls) })]),
-        h('div', { class: 'metric' }, [h('div', { class: 'label', text: 'Schema retries' }), h('div', { class: 'value sm', text: String(system.aiStats.retries) })]),
-        h('div', { class: 'metric' }, [h('div', { class: 'label', text: 'Mock fallbacks' }), h('div', { class: 'value sm', text: String(system.aiStats.fallbacks) })]),
+        h('div', { class: 'metric' }, [h('div', { class: 'label', text: '结构化调用' }), h('div', { class: 'value sm', text: String(system.aiStats.calls) })]),
+        h('div', { class: 'metric' }, [h('div', { class: 'label', text: 'Schema 重试' }), h('div', { class: 'value sm', text: String(system.aiStats.retries) })]),
+        h('div', { class: 'metric' }, [h('div', { class: 'label', text: 'Mock 回退' }), h('div', { class: 'value sm', text: String(system.aiStats.fallbacks) })]),
       ]),
     ]));
 
-    const watcherCard = card('Watcher & Scan Limits', h('div', { class: 'stack' }, [
-      h('label', { class: 'row small' }, [fields.watcherEnabled, h('span', { text: 'Enable filesystem watcher (debounced, ignores node_modules/.git/dist)' })]),
-      h('label', { class: 'row small' }, [fields.autoQuick, h('span', { text: 'Automatically queue a quick scan on change (never calls an LLM)' })]),
-      h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: 'Maximum files per scan' }), fields.maxFiles]),
-      h('div', { class: 'row' }, [h('button', { class: 'btn btn-primary', text: 'Save settings', onClick: save })]),
-      h('div', { class: 'small muted', text: `Watching ${system.watcher.watching.length} workspace(s). Debounce ${system.watcher.debounceMs}ms, rate limit ${system.watcher.maxEventsPerMinute}/min.` }),
+    const watcherCard = card('监控与扫描限制', h('div', { class: 'stack' }, [
+      h('label', { class: 'row small' }, [fields.watcherEnabled, h('span', { text: '启用文件系统监控（去抖，忽略 node_modules/.git/dist）' })]),
+      h('label', { class: 'row small' }, [fields.autoQuick, h('span', { text: '变更时自动排队快速扫描（绝不调用大模型）' })]),
+      h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '每次扫描的最大文件数' }), fields.maxFiles]),
+      h('div', { class: 'row' }, [h('button', { class: 'btn btn-primary', text: '保存设置', onClick: save })]),
+      h('div', { class: 'small muted', text: `正在监控 ${system.watcher.watching.length} 个工作区。 Debounce ${system.watcher.debounceMs}ms, rate limit ${system.watcher.maxEventsPerMinute}/min.` }),
     ]));
 
     const rootsField = h('textarea', {
@@ -79,13 +79,13 @@ export async function render() {
       const arr = stored ? JSON.parse(stored) : [];
       rootsField.value = Array.isArray(arr) ? arr.join('\n') : '';
     } catch { rootsField.value = ''; }
-    const searchRootsCard = card('Folder Recognition (drag & drop import)', h('div', { class: 'stack' }, [
-      h('p', { class: 'small muted', text: 'When you drop a folder on the Projects page, the browser only reveals its name — never its path. Commander therefore searches these roots to resolve the real location, then recognises each match with the scanner.' }),
+    const searchRootsCard = card('文件夹识别（拖拽导入）', h('div', { class: 'stack' }, [
+      h('p', { class: 'small muted', text: '把文件夹拖到“项目”页时，浏览器只会暴露文件夹名——不会暴露路径。Commander 会在这些根目录中搜索真实位置，并用扫描器识别每个匹配项。' }),
       rootsField,
-      h('div', { class: 'small muted', text: 'One absolute path per line. Searched top-down, up to 2 levels deep; node_modules, .git and system folders are skipped.' }),
+      h('div', { class: 'small muted', text: '每行一个绝对路径。按顺序搜索，最多向下 2 层；跳过 node_modules、.git 与系统目录。' }),
     ]));
 
-    const metaCard = card('Test parsers & adapters', h('div', { class: 'grid grid-2' }, [
+    const metaCard = card('测试解析器与适配器', h('div', { class: 'grid grid-2' }, [
       table([{ label: 'Framework', key: 'framework' }, { label: 'Recognised summary', key: 'summaryPattern' }], meta.testParsers),
       table([
         { label: 'Adapter', key: 'label' },
@@ -94,7 +94,7 @@ export async function render() {
       ], meta.agentAdapters),
     ]));
 
-    const systemCard = card('System', h('dl', { class: 'kv' }, Object.entries({
+    const systemCard = card('系统', h('dl', { class: 'kv' }, Object.entries({
       version: system.version,
       node: system.nodeVersion,
       platform: `${system.platform} (${system.os})`,
@@ -113,18 +113,18 @@ export async function render() {
       metaCard,
       systemCard,
     ]);
-  }, { loadingLabel: 'Loading settings…' });
+  }, { loadingLabel: '正在加载设置…' });
 }
 
 export async function renderSecurity() {
-  setTopbar('Security Model', 'What Commander is allowed to do — and what it is structurally prevented from doing.');
+  setTopbar('安全模型', 'Commander 允许做什么——以及结构上被禁止做什么。');
   const view = document.getElementById('view');
   await mountAsync(view, () => api.security(), (s) => h('div', { class: 'stack' }, [
-    card('Sensitive file protection', h('div', { class: 'stack-sm' }, [
+    card('敏感文件保护', h('div', { class: 'stack-sm' }, [
       h('p', { class: 'small', text: s.sensitiveFiles.policy }),
       h('div', { class: 'small muted', text: 'Patterns: .env, .env.*, *.pem, *.key, id_rsa, id_ed25519, credentials*, secrets*, tokens*, .npmrc, .pypirc, .netrc, .git-credentials, .aws/**, .azure/**, serviceAccount*.json, *.jks, *.keystore, secring.gpg' }),
     ])),
-    card('Command execution', h('div', { class: 'stack' }, [
+    card('命令执行', h('div', { class: 'stack' }, [
       h('p', { class: 'small', text: 'Every external command goes through a single CommandRunner. `shell` is always false — no shell injection surface exists.' }),
       h('h3', { class: 'small', text: 'Auto-allowed' }),
       h('div', { class: 'tag-list' }, s.commandRunner.autoAllowed.map((c) => h('span', { class: 'chip', text: c }))),
@@ -133,9 +133,9 @@ export async function renderSecurity() {
       h('h3', { class: 'small', text: 'Blocked argument patterns' }),
       table([{ label: 'Pattern', key: 'pattern' }, { label: 'Reason', key: 'reason' }], s.commandRunner.argumentPatternsBlocked),
     ])),
-    card('Managed workspace', h('p', { class: 'small', text: s.managedWorkspace })),
-    card('AI data boundary', h('p', { class: 'small', text: s.aiDataBoundary })),
-    card('Secrets', h('p', { class: 'small', text: s.secretsStorage })),
-  ]), { loadingLabel: 'Loading security model…' });
+    card('受管工作区', h('p', { class: 'small', text: s.managedWorkspace })),
+    card('AI 数据边界', h('p', { class: 'small', text: s.aiDataBoundary })),
+    card('密钥', h('p', { class: 'small', text: s.secretsStorage })),
+  ]), { loadingLabel: '正在加载安全模型…' });
 }
 

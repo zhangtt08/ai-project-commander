@@ -12,9 +12,9 @@ const TABS = [
 ];
 
 const TAB_LABEL = {
-  overview: 'Overview', stages: 'Stages', tasks: 'Tasks', tests: 'Tests', build: 'Build',
-  git: 'Git', changes: 'Changes', prompts: 'Prompts', sessions: 'Agent Sessions',
-  risks: 'Risks', memory: 'Memory', decisions: 'Decisions', timeline: 'Timeline', settings: 'Settings',
+  overview: '概述', stages: '阶段', tasks: '任务', tests: '测试', build: '构建',
+  git: 'Git', changes: '变更', prompts: '提示词', sessions: 'Agent 会话',
+  risks: '风险', memory: '记忆', decisions: '决策', timeline: '时间线', settings: '设置',
 };
 
 let current = { id: null, tab: 'overview', card: null };
@@ -24,7 +24,7 @@ export async function render(projectId, tab = 'overview') {
   current = { id: projectId, tab: activeTab, card: null };
 
   const view = document.getElementById('view');
-  view.replaceChildren(stateLoading('Loading project…'));
+  view.replaceChildren(stateLoading('正在加载项目…'));
 
   let cardData;
   try {
@@ -34,17 +34,17 @@ export async function render(projectId, tab = 'overview') {
       h('h3', { text: err.message }), h('div', { class: 'evidence', text: err.code || '' }),
       h('div', { style: { marginTop: '10px' } }, h('a', { class: 'btn', href: '#/projects', text: 'Back to projects' })),
     ]));
-    setTopbar('Project not found', projectId);
+    setTopbar('未找到项目', projectId);
     return;
   }
   current.card = cardData;
 
   setTopbar(cardData.name, `${cardData.workspacePath} · ${cardData.primaryLanguage} / ${cardData.framework}`, [
-    h('button', { class: 'btn', text: 'Quick scan', onClick: () => runScan('quick') }),
-    h('button', { class: 'btn', text: 'Full scan', onClick: () => runScan('full') }),
-    h('button', { class: 'btn', text: 'Generate prompt', onClick: () => generatePrompt(cardData) }),
-    h('button', { class: 'btn', text: 'Handoff', onClick: () => showHandoff(cardData) }),
-    h('button', { class: 'btn btn-ghost', text: 'All projects', onClick: () => Router.go('/projects') }),
+    h('button', { class: 'btn', text: '快速扫描', onClick: () => runScan('quick') }),
+    h('button', { class: 'btn', text: '全量扫描', onClick: () => runScan('full') }),
+    h('button', { class: 'btn', text: '生成提示词', onClick: () => generatePrompt(cardData) }),
+    h('button', { class: 'btn', text: '交接包', onClick: () => showHandoff(cardData) }),
+    h('button', { class: 'btn btn-ghost', text: '全部项目', onClick: () => Router.go('/projects') }),
   ]);
 
   const tabsBar = h('div', { class: 'tabs', role: 'tablist' }, TABS.map((t) => h('button', {
@@ -57,6 +57,9 @@ export async function render(projectId, tab = 'overview') {
 
   const container = h('div', { class: 'stack' });
   view.replaceChildren(tabsBar, container);
+
+  // 若该项目有排队/运行中的任务，完成后自动刷新界面（拖拽导入后的首次扫描即属此类）。
+  scheduleScanRefresh(projectId);
 
   const loaders = {
     overview: () => renderOverview(container, projectId),
@@ -77,11 +80,24 @@ export async function render(projectId, tab = 'overview') {
   await loaders[activeTab]();
 }
 
+function scheduleScanRefresh(projectId) {
+  const startedAt = Date.now();
+  const timer = setInterval(async () => {
+    if (current.id !== projectId || Date.now() - startedAt > 600000) { clearInterval(timer); return; }
+    try {
+      const jobs = await api.jobs();
+      const busy = jobs.some((j) => j.project_id === projectId && (j.status === 'queued' || j.status === 'running'));
+      if (!busy) { clearInterval(timer); Router.reload(); }
+    } catch { /* transient */ }
+  }, 3000);
+  if (timer.unref) timer.unref();
+}
+
 async function runScan(mode) {
   try {
-    toast(`${mode} scan queued…`, 'info', 4000);
+    toast(`已入队${mode === 'quick' ? '快速' : '全量'}扫描…`, 'info', 4000);
     await api.scan(current.id, { mode, runCommands: mode === 'full', suites: ['unit', 'e2e'] });
-    toast('Scan queued — results appear when the job completes.', 'ok');
+    toast('扫描已入队——任务完成后结果自动出现。', 'ok');
     const started = Date.now();
     const poll = setInterval(async () => {
       if (Date.now() - started > 180000) { clearInterval(poll); return; }
@@ -92,12 +108,12 @@ async function runScan(mode) {
           clearInterval(poll);
           await refreshShellData();
           Router.reload();
-          toast('Scan finished.', 'ok');
+          toast('扫描完成。', 'ok');
         }
       } catch { clearInterval(poll); }
     }, 3000);
   } catch (err) {
-    toast(`Scan failed: ${err.message}`, 'error');
+    toast(`扫描失败：${err.message}`, 'error');
   }
 }
 
@@ -112,24 +128,24 @@ async function renderOverview(container, id) {
 
     return h('div', { class: 'stack' }, [
       h('div', { class: 'grid grid-4' }, [
-        metric('Health', p.health, { cls: p.health === 'healthy' ? 'ok' : p.health === 'critical' ? 'alert' : p.health === 'warning' ? 'warn' : '', foot: d.health ? `${d.health.score}/100` : '' }),
+        metric('健康', p.health, { cls: p.health === 'healthy' ? 'ok' : p.health === 'critical' ? 'alert' : p.health === 'warning' ? 'warn' : '', foot: d.health ? `${d.health.score}/100` : '' }),
         metric('Stage', p.currentStage || 'unknown', { sm: true, foot: p.status }),
-        metric('Build', d.build ? d.build.status : 'not run', { sm: true, cls: d.build && d.build.status === 'pass' ? 'ok' : d.build && d.build.status === 'fail' ? 'alert' : '', foot: d.build ? d.build.command : '' }),
-        metric('Unit tests', d.tests.unit ? `${d.tests.unit.passed}/${d.tests.unit.total}` : 'not run', { cls: d.tests.unit && d.tests.unit.status === 'pass' ? 'ok' : d.tests.unit && d.tests.unit.status === 'fail' ? 'alert' : '' }),
-        metric('E2E tests', d.tests.e2e ? `${d.tests.e2e.passed}/${d.tests.e2e.total}` : 'not run', { cls: d.tests.e2e && d.tests.e2e.status === 'pass' ? 'ok' : d.tests.e2e && d.tests.e2e.status === 'fail' ? 'alert' : '' }),
-        metric('Open tasks', `${d.taskSummary.done}/${d.taskSummary.total}`, { foot: `${d.taskSummary.blocked} blocked` }),
-        metric('Risks', `${d.riskSummary.bySeverity.critical}c / ${d.riskSummary.bySeverity.high}h`, { cls: d.riskSummary.bySeverity.critical ? 'alert' : d.riskSummary.bySeverity.high ? 'warn' : '', foot: `worst: ${d.riskSummary.worst || 'none'}` }),
-        metric('Regressions', String(d.regressionSummary.count), { cls: d.regressionSummary.count ? 'alert' : 'ok', foot: d.regressionSummary.worst || 'none' }),
+        metric('构建', d.build ? d.build.status : '未运行', { sm: true, cls: d.build && d.build.status === 'pass' ? 'ok' : d.build && d.build.status === 'fail' ? 'alert' : '', foot: d.build ? d.build.command : '' }),
+        metric('单元测试', d.tests.unit ? `${d.tests.unit.passed}/${d.tests.unit.total}` : '未运行', { cls: d.tests.unit && d.tests.unit.status === 'pass' ? 'ok' : d.tests.unit && d.tests.unit.status === 'fail' ? 'alert' : '' }),
+        metric('端到端测试', d.tests.e2e ? `${d.tests.e2e.passed}/${d.tests.e2e.total}` : '未运行', { cls: d.tests.e2e && d.tests.e2e.status === 'pass' ? 'ok' : d.tests.e2e && d.tests.e2e.status === 'fail' ? 'alert' : '' }),
+        metric('开放任务', `${d.taskSummary.done}/${d.taskSummary.total}`, { foot: `${d.taskSummary.blocked} 个阻塞` }),
+        metric('风险', `${d.riskSummary.bySeverity.critical} 危急 / ${d.riskSummary.bySeverity.high} 高`, { cls: d.riskSummary.bySeverity.critical ? 'alert' : d.riskSummary.bySeverity.high ? 'warn' : '', foot: `最重：${d.riskSummary.worst || '无'}` }),
+        metric('回归', String(d.regressionSummary.count), { cls: d.regressionSummary.count ? 'alert' : 'ok', foot: d.regressionSummary.worst || '无' }),
       ]),
 
       h('div', { class: 'grid grid-2' }, [
-        card('Progress', h('div', { class: 'stack-sm' }, [
+        card('进度', h('div', { class: 'stack-sm' }, [
           progressBar(d.progress),
           d.progress && d.progress.method ? h('div', { class: 'small muted', text: `method: ${d.progress.method} · confidence: ${d.progress.confidence}` }) : null,
           (d.progress && d.progress.parts ? d.progress.parts : []).map((part) => h('div', { class: 'small muted', text: `${part.key}: ${part.detail}` })),
-        ]), { hint: 'derived from stages + tasks + acceptance only' }),
+        ]), { hint: '仅由阶段 + 任务 + 验收标准推导' }),
 
-        card('Acceptance Gate', d.gate ? h('div', { class: 'stack-sm' }, [
+        card('验收门', d.gate ? h('div', { class: 'stack-sm' }, [
           h('div', { class: 'row' }, [gateBadge(d.gate)]),
           h('div', { class: 'small', text: d.gate.explanation }),
           ...d.gate.checks.map((c) => h('div', { class: `check-item ${c.status}` }, [
@@ -140,10 +156,10 @@ async function renderOverview(container, id) {
             h('div', { class: 'small muted', text: c.detail }),
             c.evidence && c.evidence.length ? evidenceList(c.evidence) : null,
           ])),
-        ]) : stateEmpty('Gate not evaluated', 'Run a full scan to evaluate the acceptance gate.')),
+        ]) : stateEmpty('门禁未评估', '运行一次全量扫描以评估验收门。')),
       ]),
 
-      d.nextAction ? card('Next recommended action', h('div', { class: 'stack-sm' }, [
+      d.nextAction ? card('下一步建议行动', h('div', { class: 'stack-sm' }, [
         h('div', { class: 'row wrap' }, [
           h('span', { class: 'badge badge-accent', text: d.nextAction.priority }),
           h('span', { class: 'badge badge-neutral', text: `rule: ${d.nextAction.deterministicRule || 'n/a'}` }),
@@ -165,13 +181,13 @@ async function renderOverview(container, id) {
           h('div', { class: 'tag-list' }, d.nextAction.verificationCommands.map((c) => h('code', { class: 'inline', text: c }))),
         ]) : null,
         h('div', { class: 'row' }, [
-          h('button', { class: 'btn btn-primary btn-sm', text: 'Generate agent prompt', onClick: () => generatePrompt(current.card) }),
-          h('button', { class: 'btn btn-sm', text: 'Recompute with AI', onClick: recomputeNextAction }),
+          h('button', { class: 'btn btn-primary btn-sm', text: '生成 Agent 提示词', onClick: () => generatePrompt(current.card) }),
+          h('button', { class: 'btn btn-sm', text: '用 AI 重新计算', onClick: recomputeNextAction }),
         ]),
-      ])) : card('Next recommended action', stateEmpty('Not computed yet', 'Run a full scan, then generate the next action.')),
+      ])) : card('下一步建议行动', stateEmpty('尚未计算', '先进行一次全量扫描，然后生成下一步动作。')),
 
       h('div', { class: 'grid grid-2' }, [
-        card('Health breakdown (Why?)', d.health ? h('div', { class: 'stack-sm' }, d.health.reasons.map((r) => h('div', { class: `reason-item sev-${r.severity}` }, [
+        card('健康明细（为什么？）', d.health ? h('div', { class: 'stack-sm' }, d.health.reasons.map((r) => h('div', { class: `reason-item sev-${r.severity}` }, [
           h('div', { class: 'row-between' }, [
             h('strong', { class: 'small', text: r.code }),
             h('span', { class: 'badge badge-neutral', text: r.severity }),
@@ -179,8 +195,8 @@ async function renderOverview(container, id) {
           h('div', { class: 'small', text: r.message }),
           r.fix ? h('div', { class: 'small muted', text: `Fix: ${r.fix}` }) : null,
           r.evidence && r.evidence.length ? evidenceList(r.evidence) : null,
-        ]))) : stateEmpty('No health analysis', 'Run a full scan.')),
-        card('Specification drift', d.drift ? h('div', { class: 'stack-sm' }, [
+        ]))) : stateEmpty('暂无健康分析', '请先运行一次全量扫描。')),
+        card('规范漂移', d.drift ? h('div', { class: 'stack-sm' }, [
           h('div', { class: 'row' }, [
             h('span', { class: `badge ${d.drift.verdict === 'aligned' ? 'badge-pass' : d.drift.verdict === 'possible_drift' ? 'badge-warning' : 'badge-unknown'}`, text: d.drift.verdict }),
             h('span', { class: 'small muted', text: d.drift.note || '' }),
@@ -190,10 +206,10 @@ async function renderOverview(container, id) {
             h('div', { class: 'small muted', text: x.description }),
             x.evidence && x.evidence.length ? evidenceList(x.evidence) : null,
           ])),
-        ]) : stateEmpty('No drift analysis yet')),
+        ]) : stateEmpty('暂无漂移分析')),
       ]),
 
-      card('Detected commands', d.commands.length
+      card('检测到的命令', d.commands.length
         ? table([
           { label: 'Kind', key: 'kind' },
           { label: 'Supported', render: (r) => (r.supported ? h('span', { class: 'badge badge-pass', text: 'yes' }) : h('span', { class: 'badge badge-unknown', text: 'no' })) },
@@ -203,7 +219,7 @@ async function renderOverview(container, id) {
         ], d.commands)
         : stateEmpty('No metadata yet')),
 
-      card('Project metadata', meta ? h('dl', { class: 'kv' }, [
+      card('项目元数据', meta ? h('dl', { class: 'kv' }, [
         h('dt', { text: 'Files scanned' }), h('dd', { text: `${meta.fileCount} (${fmt.bytes(meta.totalBytes)})${meta.truncated ? ' — TRUNCATED at the configured limit' : ''}` }),
         h('dt', { text: 'Languages' }), h('dd', { text: (meta.languages || []).slice(0, 6).map((l) => `${l.name} (${l.files})`).join(', ') || '—' }),
         h('dt', { text: 'Frameworks' }), h('dd', { text: (meta.frameworks || []).join(', ') || '—' }),
@@ -217,23 +233,23 @@ async function renderOverview(container, id) {
         h('dt', { text: 'Scan duration' }), h('dd', { text: `${meta.durationMs}ms${d.lastScanDurationMs ? ` (full pipeline ${d.lastScanDurationMs}ms)` : ''}` }),
       ]) : stateEmpty('Not scanned yet', 'Run a full scan.')),
 
-      d.aiSummary ? card('AI project summary', h('div', { class: 'stack-sm' }, [
+      d.aiSummary ? card('AI 项目摘要', h('div', { class: 'stack-sm' }, [
         h('div', { class: 'row' }, [mockBadge(d.aiSummary.provider), h('span', { class: 'badge badge-neutral', text: `confidence: ${d.aiSummary.confidence}` })]),
         h('div', { class: 'small', text: d.aiSummary.summary }),
         d.aiSummary.mainModules && d.aiSummary.mainModules.length ? h('div', { class: 'tag-list' }, d.aiSummary.mainModules.map((m) => h('span', { class: 'chip', text: m }))) : null,
         evidenceList(d.aiSummary.evidence || []),
       ])) : null,
 
-      unavailable.length ? card('Explicitly unsupported', h('div', { class: 'small muted', text: `Commander could not detect a command for: ${unavailable.join(', ')}. This is reported as "unsupported" rather than guessed.` })) : null,
+      unavailable.length ? card('明确不支持', h('div', { class: 'small muted', text: `未能为以下类型检测到命令：${unavailable.join('、')}。Commander 会如实报告“不适用”，而不是猜测。` })) : null,
     ]);
-  }, { loadingLabel: 'Loading overview…' });
+  }, { loadingLabel: '正在加载概述…' });
 }
 
 async function recomputeNextAction() {
   try {
-    toast('Recomputing next action…', 'info', 3000);
+    toast('正在重新计算下一步行动…', 'info', 3000);
     await api.generateNextAction(current.id, { useAI: true });
-    toast('Next action updated', 'ok');
+    toast('下一步行动已更新', 'ok');
     Router.reload();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -513,7 +529,7 @@ async function generatePrompt(cardData) {
     showPrompt(res.prompt);
     Router.reload();
   } catch (err) {
-    toast(`Prompt generation failed: ${err.message}`, 'error');
+    toast(`提示词生成失败：${err.message}`, 'error');
   }
 }
 
@@ -804,7 +820,7 @@ async function showHandoff(cardData) {
       h('pre', { class: 'code', style: { maxHeight: '50vh' }, text: pkg.markdown }),
     ]));
   } catch (err) {
-    toast(`Handoff failed: ${err.message}`, 'error');
+    toast(`交接包生成失败：${err.message}`, 'error');
   }
 }
 
