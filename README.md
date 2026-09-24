@@ -80,10 +80,15 @@ once on failure, and falls back to a deterministic mock that is *labelled as moc
 
 ## Quick Start
 
+**Windows 一键启动**：双击项目根目录的 `启动.bat`（或桌面上的 `启动AI项目指挥官.bat`）——
+它会启动服务并把实际地址（含端口自动顺延后的）写进 `data\server-url.txt` 再自动打开浏览器。
+
+命令行方式：
+
 ```bash
 cd AI-Project-Commander
 npm install        # no-op (zero dependencies) — kept for convention
-npm run dev        # → http://127.0.0.1:8787
+npm run dev        # → http://127.0.0.1:8787（被占用时自动 +1，横幅会打印实际地址）
 ```
 
 On first start Commander seeds and analyses three demo projects. To re-seed:

@@ -69,6 +69,13 @@ async function serve(args) {
   }
   const url = `http://${host}:${bound}`;
   logger.info('server_listening', { url, dataDir: app.dataDir, db: app.dbFile });
+  // Persist the actual URL so launchers (see 启动.bat) can open the right address
+  // even when the port auto-fallback kicked in.
+  try {
+    fs.writeFileSync(path.join(app.dataDir, 'server-url.txt'), url, 'utf8');
+  } catch (err) {
+    logger.warn('server_url_write_failed', { error: err.message });
+  }
   process.stdout.write(`\n  AI Project Commander\n  ─────────────────────\n  URL       ${url}\n  API       ${url}/api/dashboard\n  Data dir  ${app.dataDir}\n  Provider  ${app.providerRegistry.activeName}\n  Demo      ${app.listProjects().filter((p) => p.is_demo).length} project(s)\n\n`);
 
   const shutdown = () => {
