@@ -45,6 +45,7 @@ export async function render(projectId, tab = 'overview') {
     h('button', { class: 'btn', text: '生成提示词', onClick: () => generatePrompt(cardData) }),
     h('button', { class: 'btn', text: '交接包', onClick: () => showHandoff(cardData) }),
     h('button', { class: 'btn btn-ghost', text: '全部项目', onClick: () => Router.go('/projects') }),
+    h('button', { class: 'btn btn-danger', text: '删除', onClick: () => confirmDelete(cardData) }),
   ]);
 
   const tabsBar = h('div', { class: 'tabs', role: 'tablist' }, TABS.map((t) => h('button', {
@@ -512,7 +513,19 @@ function showPrompt(p) {
       h('span', { class: 'chip', text: `agent: ${p.agent_key}` }),
       h('span', { class: 'chip', text: `provider: ${p.provider}` }),
       h('span', { class: 'chip', text: fmt.date(p.created_at) }),
-      copyButton(p.content, 'Copy prompt'),
+      copyButton(p.content, '复制提示词'),
+      h('button', {
+        class: 'btn btn-sm',
+        text: '导出为 .md 文件',
+        onClick: () => {
+          const blob = new Blob([p.content], { type: 'text/markdown;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = h('a', { href: url, download: `${(p.title || 'agent-prompt').replace(/[\\/:*?"<>|]/g, '-')}.md` });
+          document.body.appendChild(link); link.click(); document.body.removeChild(link);
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+          toast('提示词已导出为 .md 文件，可直接拖给 Coding Agent 使用', 'ok', 8000);
+        },
+      }),
     ]),
     h('pre', { class: 'code', style: { maxHeight: '46vh' }, text: p.content }),
     p.expected_result ? h('div', {}, [h('div', { class: 'small muted', text: 'Expected result' }), h('div', { class: 'small', text: p.expected_result })]) : null,
@@ -794,6 +807,33 @@ async function renderSettings(container, cardData) {
 }
 
 // ───────────────────────────── Handoff ─────────────────────────────
+
+async function confirmDelete(cardData) {
+  const confirmInput = h('input', { class: 'input', placeholder: '输入 DELETE 确认', 'aria-label': '删除确认' });
+  const status = h('div', { class: 'small muted' });
+  const dlg = modal(`删除项目记录 — ${cardData.name}`, h('div', { class: 'stack' }, [
+    h('div', { class: 'small', text: '仅删除 Commander 自己的数据库记录（任务/风险/快照/提示词等）。源码目录不会被修改或删除：' }),
+    h('div', { class: 'evidence', text: cardData.workspacePath }),
+    confirmInput,
+    h('div', { class: 'row' }, [
+      h('button', {
+        class: 'btn btn-danger', text: '永久删除记录',
+        onClick: async () => {
+          if (confirmInput.value.trim() !== 'DELETE') { status.textContent = '请输入 DELETE 以确认。'; return; }
+          try {
+            const res = await api.deleteProject(cardData.id);
+            dlg.close();
+            toast(`记录已删除，源码目录未动：${res.sourceDirectoryUntouched}`, 'ok', 9000);
+            await refreshShellData();
+            Router.go('/projects');
+          } catch (err) { toast(err.message, 'error'); }
+        },
+      }),
+      h('button', { class: 'btn', text: '取消', onClick: () => dlg.close() }),
+    ]),
+    status,
+  ]));
+}
 
 async function showHandoff(cardData) {
   try {

@@ -215,7 +215,7 @@ export class MockAIProvider extends AIProvider {
     const sections = REQUIRED_PROMPT_SECTIONS.map((section) => {
       switch (section) {
         case 'PROJECT CONTEXT':
-          return `## PROJECT CONTEXT\n${ctx.projectMemoryText || '(no project memory)'}\n`;
+          return `## PROJECT CONTEXT\n${ctx.memoryText || ctx.projectMemoryText || '(no project memory)'}\n`;
         case 'CURRENT STATE':
           return `## CURRENT STATE\n${ctx.stateText || '(no state captured)'}\n`;
         case 'OBJECTIVE':
@@ -231,7 +231,7 @@ export class MockAIProvider extends AIProvider {
         case 'ACCEPTANCE CRITERIA':
           return `## ACCEPTANCE CRITERIA\n${(action.acceptanceCriteria || []).map((c) => `- ${c}`).join('\n')}\n`;
         case 'VERIFICATION COMMANDS':
-          return `## VERIFICATION COMMANDS\n${(action.verificationCommands || []).map((c) => `- \`${c}\``).join('\n')}\n`;
+          return `## VERIFICATION COMMANDS\n- 先切换到工作目录：\`cd /d "${ctx.project ? (ctx.project.workspace_path || ctx.project.workspacePath || '') : ''}"\`\n${(action.verificationCommands || []).map((c) => `- \`${c}\``).join('\n')}\n`;
         case 'COMPLETION REQUIREMENTS':
           return `## COMPLETION REQUIREMENTS\n- All verification commands must pass.\n- Report the exact commands you ran and their results.\n- Do not delete or disable tests.\n- Update the specification if the acceptance criteria changed.\n`;
         default:

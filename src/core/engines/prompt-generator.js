@@ -27,31 +27,44 @@ export class PromptGenerator {
 
   buildContext(ctx) {
     const { project, metadata, git, unit, e2e, integration, build, nextAction, risks, memory, failedCases, specs, criteria, tasks } = ctx;
+    const workspace = project.workspace_path || project.workspacePath || '';
+    const ZH_STATE = {
+      build: '构建', unit: '单元测试', integration: '集成测试', e2e: '端到端测试',
+      planning: '规划中', developing: '开发中', testing: '测试中', review: '评审中', blocked: '已阻塞', ready: '就绪', released: '已发布', archived: '已归档',
+      healthy: '健康', warning: '警告', critical: '危急', unknown: '未知',
+      pass: '通过', fail: '失败', error: '错误', timeout: '超时', unsupported: '不适用',
+      done: '已完成', todo: '待办', in_progress: '进行中', cancelled: '已取消',
+    };
+    const st = (v) => ZH_STATE[v] || v;
     const stateLines = [
-      `- Project: ${project.name} (${project.workspacePath})`,
-      `- Health: ${project.health}; Status: ${project.status}`,
-      `- Stage: ${ctx.currentStage ? ctx.currentStage.name : 'unknown'}`,
-      `- Build: ${build ? `${build.status}${build.command ? ` (\`${build.command}\`)` : ''}` : 'not run'}`,
-      `- Unit: ${unit ? `${unit.passed}/${unit.total} ${unit.status}` : 'not run'}`,
-      `- E2E: ${e2e ? `${e2e.passed}/${e2e.total} ${e2e.status}` : 'not run'}`,
-      `- Integration: ${integration ? `${integration.passed}/${integration.total} ${integration.status}` : 'not run'}`,
-      git && git.isRepository ? `- Git: ${git.branch} @ ${git.commitShort || 'no-commit'} (${git.workingTreeClean ? 'clean' : `${git.changedFileCount} modified, ${(git.untracked || []).length} untracked`})` : '- Git: not a repository',
-      `- Tasks: ${tasks.filter((t) => t.status === 'done').length}/${tasks.length} done`,
-      `- Acceptance: ${criteria.filter((c) => c.status === 'satisfied').length}/${criteria.length} satisfied`,
-      `- Open risks: ${risks.filter((r) => r.status === 'open').length}`,
+      `- 项目名称：${project.name}`,
+      `- 工作目录（执行任何命令前，必须先 cd 到该目录）：${workspace}`,
+      `- 项目描述：${project.description || '（未填写）'}`,
+      `- 健康：${st(project.health)}；状态：${st(project.status)}`,
+      `- 阶段：${ctx.currentStage ? ctx.currentStage.name : '未知'}`,
+      `- 构建：${build ? `${st(build.status)}${build.command ? `（\`${build.command}\`）` : ''}` : '未运行'}`,
+      `- 单元测试：${unit ? `${unit.passed}/${unit.total} ${st(unit.status)}` : '未运行'}`,
+      `- 端到端测试：${e2e ? `${e2e.passed}/${e2e.total} ${st(e2e.status)}` : '未运行'}`,
+      `- 集成测试：${integration ? `${integration.passed}/${integration.total} ${st(integration.status)}` : '未运行'}`,
+      git && git.isRepository ? `- Git：${git.branch} @ ${git.commitShort || '无提交'}（${git.workingTreeClean ? '干净' : `${git.changedFileCount} 个修改，${(git.untracked || []).length} 个未跟踪`}）` : '- Git：不是仓库',
+      `- 任务：${tasks.filter((t) => t.status === 'done').length}/${tasks.length} 已完成`,
+      `- 验收标准：${criteria.filter((c) => c.status === 'satisfied').length}/${criteria.length} 已满足`,
+      `- 未解决风险：${risks.filter((r) => r.status === 'open').length} 个`,
     ];
 
+    const ZH_SUITE = { unit: '单元测试', integration: '集成测试', e2e: '端到端测试' };
     const failureLines = [];
-    for (const run of [unit, e2e, integration]) {
+    for (const [key, run] of [['unit', unit], ['integration', integration], ['e2e', e2e]]) {
       if (run && (run.status === RUN_STATUS.FAIL || run.status === RUN_STATUS.ERROR)) {
-        failureLines.push(`- ${run.suite}: ${run.failed} of ${run.total} failing (${run.framework})`);
+        failureLines.push(`- ${ZH_SUITE[key]}：${run.total ? `${run.failed}/${run.total} 失败` : '无法解析结果'}（${run.framework}）`);
       }
     }
     if (build && (build.status === BUILD_STATUS.FAIL || build.status === BUILD_STATUS.TIMEOUT)) {
       failureLines.push(`- build: ${build.status} (exit ${build.exitCode})`);
     }
+    const ZH_SUITE2 = { unit: '单元', integration: '集成', e2e: '端到端' };
     for (const c of (failedCases || []).slice(0, 12)) {
-      failureLines.push(`  - [${c.suite}] ${c.name}${c.file ? ` — ${c.file}` : ''}${c.errorSummary ? `\n      ${truncate(c.errorSummary, 220)}` : ''}`);
+      failureLines.push(`  - [${ZH_SUITE2[c.suite] || c.suite}] ${c.name}${c.file ? ` —— ${c.file}` : ''}${c.errorSummary ? `\n      ${truncate(c.errorSummary, 220)}` : ''}`);
     }
 
     return {
