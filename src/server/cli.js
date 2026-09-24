@@ -45,8 +45,29 @@ async function serve(args) {
     await app.seedDemoAndAnalyze({ runCommands: true });
   }
 
-  await new Promise((resolve) => server.listen(port, host, resolve));
-  const url = `http://${host}:${port}`;
+  // Auto-fallback: if the port is taken by another local app, walk up instead of crashing.
+  let bound = port;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const candidate = port + attempt;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve, reject) => {
+        const onError = (err) => { server.removeListener('listening', onListening); reject(err); };
+        const onListening = () => { server.removeListener('error', onError); resolve(); };
+        server.once('error', onError);
+        server.once('listening', onListening);
+        server.listen(candidate, host);
+      });
+      bound = candidate;
+      break;
+    } catch (err) {
+      if (attempt === 19 || (err.code !== 'EADDRINUSE' && err.code !== 'EACCES')) {
+        throw new Error(`could not bind ${host}:${candidate} — ${err.message}`);
+      }
+      logger.warn('port_busy', { port: candidate });
+    }
+  }
+  const url = `http://${host}:${bound}`;
   logger.info('server_listening', { url, dataDir: app.dataDir, db: app.dbFile });
   process.stdout.write(`\n  AI Project Commander\n  ─────────────────────\n  URL       ${url}\n  API       ${url}/api/dashboard\n  Data dir  ${app.dataDir}\n  Provider  ${app.providerRegistry.activeName}\n  Demo      ${app.listProjects().filter((p) => p.is_demo).length} project(s)\n\n`);
 
