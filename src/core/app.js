@@ -546,9 +546,13 @@ export class App {
 
   dashboard() {
     const projects = this.listProjects();
-    const counts = { total: projects.length, healthy: 0, warning: 0, critical: 0, unknown: 0, blocked: 0, archived: this.repo.list('projects', {}).filter((p) => p.archived_at).length };
+    const counts = { total: projects.length, healthy: 0, warning: 0, critical: 0, unknown: 0, blocked: 0, missing: 0, archived: this.repo.list('projects', {}).filter((p) => p.archived_at).length };
     for (const p of projects) {
-      counts[p.health] = (counts[p.health] || 0) + 1;
+      // A folder that no longer exists cannot be assessed, so no cached health verdict applies.
+      // It counts as critical — the same way attentionCenter reports it — instead of inheriting
+      // an old colour that would claim the workspace was read.
+      if (!fs.existsSync(p.workspace_path)) { counts.critical += 1; counts.missing += 1; }
+      else counts[p.health] = (counts[p.health] || 0) + 1;
       if (p.status === PROJECT_STATUS.BLOCKED) counts.blocked += 1;
     }
     const cards = projects.map((p) => this.projectCard(p));
@@ -557,6 +561,9 @@ export class App {
 
   projectCard(project) {
     const meta = project.metadata || {};
+    // One source of truth for what is known right now: when the folder is gone, cached
+    // classification/purpose/advice is dropped rather than presented as a current verdict.
+    const view = this.suggestionsView(project);
     const tasks = this.repo.list('tasks', { project_id: project.id });
     const risks = this.repo.list('risks', { project_id: project.id });
     const regressions = this.repo.list('regressions', { project_id: project.id }, { orderBy: 'ts DESC', limit: 5 });
@@ -584,15 +591,54 @@ export class App {
       category: project.category || 'uncategorized',
       categoryLabel: categoryLabel(project.category),
       categoryManual: !!project.category_manual,
-      classification: meta.classification || null,
-      purpose: meta.purpose || null,
-      suggestionSummary: meta.suggestionSummary || null,
-      suggestionCount: (meta.suggestions || []).length,
+      classification: view.classification,
+      purpose: view.purpose,
+      suggestionSummary: view.summary,
+      suggestionCount: view.suggestions.length,
       taskSummary: { total: tasks.length, done: tasks.filter((t) => t.status === 'done').length, blocked: tasks.filter((t) => t.status === 'blocked').length },
       riskSummary: riskSummary(risks),
       regressionSummary: regressionSummary(regressions),
       primaryLanguage: project.primary_language,
       framework: project.framework,
+      // A folder can be moved or deleted outside Commander. Stale verdicts must never be
+      // presented as current, so the UI needs to know the workspace is unreadable now.
+      workspaceMissing: view.workspaceMissing,
+    };
+  }
+
+  /**
+   * Cached verdicts are claims about the last state Commander actually read. Once the folder is
+   * gone, replaying the old list would present advice about a directory that no longer exists,
+   * so the panel reports the one thing that is true now.
+   */
+  suggestionsView(project) {
+    const meta = project.metadata || {};
+    const base = {
+      projectId: project.id,
+      category: project.category,
+      classification: meta.classification || null,
+      purpose: meta.purpose || null,
+      suggestions: meta.suggestions || [],
+      summary: meta.suggestionSummary || null,
+      generatedAt: meta.suggestedAt || null,
+      workspaceMissing: false,
+    };
+    if (fs.existsSync(project.workspace_path)) return base;
+    return {
+      ...base,
+      classification: null,
+      purpose: null,
+      summary: null,
+      generatedAt: null,
+      workspaceMissing: true,
+      suggestions: [{
+        id: 'workspace-missing',
+        title: '项目目录已不存在，无法给出当前的优化建议',
+        why: `Commander 只根据真实读到的文件下结论。${project.workspace_path} 现在不在磁盘上，之前缓存的 ${base.suggestions.length} 条建议描述的是 ${project.last_analyzed_at || '未知时间'} 的状态，继续展示会误导。`,
+        action: '如果项目只是移动了位置，请在「整理」里改成新路径后重新分析；如果已经不需要了，可以直接删除这条记录。',
+        evidence: `workspace_path=${project.workspace_path} 不存在；上次分析时间 ${project.last_analyzed_at || '无记录'}`,
+        impact: 'high', effort: 'low', area: '整理',
+      }],
     };
   }
 
@@ -603,6 +649,10 @@ export class App {
       // When Commander observed this. Each item prefers the timestamp of the record that
       // triggered it; the analysis time is the honest floor, never a made-up age.
       const observed = project.last_analyzed_at || card.lastActivity || project.updated_at || null;
+      if (card.workspaceMissing) {
+        items.push({ projectId: project.id, projectName: project.name, kind: 'workspace_missing', severity: 'critical', at: observed, title: `${project.name}：项目目录已不存在`, detail: `${project.workspace_path} —— 面板上的结论来自 ${project.last_analyzed_at ? '上次分析的缓存' : '从未成功分析'}，不代表磁盘现状。` });
+        continue;
+      }
       const health = project.metadata && project.metadata.health;
       if (card.health === PROJECT_HEALTH.CRITICAL) {
         items.push({ projectId: project.id, projectName: project.name, kind: 'critical_health', severity: 'critical', at: (health && health.ts) || observed, title: `${project.name} 处于危急状态`, detail: (health && health.reasons || []).slice(0, 2).map((r) => r.message).join(' ') || '健康状态为危急。' });

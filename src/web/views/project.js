@@ -60,7 +60,10 @@ export async function render(projectId, tab = 'overview') {
   })));
 
   const container = h('div', { class: 'stack' });
-  view.replaceChildren(tabsBar, container);
+  const missingBanner = cardData.workspaceMissing
+    ? h('div', { class: 'danger-note', text: `项目目录已不存在：${cardData.workspacePath} —— 本页各标签的内容来自最后一次成功分析（${fmt.date(cardData.lastAnalyzedAt)}），不代表磁盘现状。请在「整理」中修正路径后重新分析，或删除这条记录。` })
+    : null;
+  view.replaceChildren(...[missingBanner, tabsBar, container].filter(Boolean));
 
   // 若该项目有排队/运行中的任务，完成后自动刷新界面（拖拽导入后的首次扫描即属此类）。
   scheduleScanRefresh(projectId);
@@ -940,6 +943,14 @@ async function renderSuggestions(container, projectId) {
         h('div', { class: 'sugg-evidence', text: `证据：${s.evidence}` }),
       ]))
       : [stateEmpty('没有可报告的优化建议', '该项目当前没有触发任何规则——这不代表完美，只代表规则未命中。')];
+
+    if (data.workspaceMissing) {
+      return h('div', { class: 'stack' }, [
+        h('div', { class: 'danger-note', text: `目录已不存在：${list[0] ? list[0].evidence : ''}` }),
+        h('div', { class: 'stack-sm' }, items),
+        h('div', { class: 'small muted', text: '缓存的识别结论与历史建议已隐藏，因为它们无法代表磁盘现状。' }),
+      ]);
+    }
 
     return h('div', { class: 'stack' }, [
       purposeBox,

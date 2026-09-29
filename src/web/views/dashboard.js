@@ -15,14 +15,32 @@ function runCell(run, suite) {
 
 function projectCard(cardData) {
   const meta = cardData;
-  return h('article', {
+  const shell = {
     class: 'proj-card',
     tabindex: '0',
     role: 'link',
     'aria-label': `打开项目 ${meta.name}`,
     onClick: () => Router.go(`/projects/${meta.id}`),
     onKeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); Router.go(`/projects/${meta.id}`); } },
-  }, [
+  };
+
+  // The folder moved or was deleted outside Commander. Every cached verdict below would then be
+  // a claim about a directory that cannot be read, so the card reports only what is known now.
+  if (meta.workspaceMissing) {
+    return h('article', shell, [
+      h('div', { class: 'row-between' }, [
+        h('h3', { text: meta.name }),
+        h('span', { class: 'badge badge-critical', text: '目录已不存在' }),
+      ]),
+      h('div', { class: 'path', text: meta.workspacePath }),
+      h('div', { class: 'stack-sm' }, [
+        h('div', { class: 'small', text: '这个目录当前不在磁盘上，历史结论已隐藏，因为它们不代表现状。' }),
+        h('div', { class: 'small muted', text: `最后一次分析：${fmt.date(meta.lastAnalyzedAt)} —— 请在「整理」中修正路径后重新分析，或删除这条记录。` }),
+      ]),
+    ]);
+  }
+
+  return h('article', shell, [
     h('div', { class: 'row-between' }, [
       h('div', { class: 'row' }, [
         h('h3', { text: meta.name }),
@@ -74,7 +92,7 @@ export async function render() {
         metric('项目数', fmt.num(c.total), { foot: `${c.archived} 个已归档` }),
         metric('健康', fmt.num(c.healthy), { cls: 'ok' }),
         metric('警告', fmt.num(c.warning), { cls: c.warning ? 'warn' : '' }),
-        metric('危急', fmt.num(c.critical), { cls: c.critical ? 'alert' : '' }),
+        metric('危急', fmt.num(c.critical), { cls: c.critical ? 'alert' : '', foot: c.missing ? `${c.missing} 个目录已丢失` : undefined }),
         metric('阻塞', fmt.num(c.blocked), { cls: c.blocked ? 'alert' : '' }),
         metric('关注项', fmt.num(attentionData.items.length), { cls: criticals ? 'alert' : '', foot: `${criticals} 个紧急` }),
       ]),

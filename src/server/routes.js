@@ -156,11 +156,7 @@ export function buildRouter(app) {
       riskSummary: riskSummary(app.repo.list('risks', { project_id: project.id })),
       regressionSummary: regressionSummary(app.repo.list('regressions', { project_id: project.id })),
       memoryVersion: (app.memoryStore.latest(project.id) || {}).version || null,
-      category: project.category,
-      classification: meta.classification || null,
-      purpose: meta.purpose || null,
-      suggestions: meta.suggestions || [],
-      suggestionSummary: meta.suggestionSummary || null,
+      ...app.suggestionsView(project),
       github: meta.github || null,
       lastScanDurationMs: meta.lastScanDurationMs || null,
     };
@@ -206,16 +202,7 @@ export function buildRouter(app) {
   // ── 可优化的建议 ────────────────────────────────────────────────────────
   r.get('/api/projects/:id/suggestions', ({ params }) => {
     const project = needProject(app, params.id);
-    const meta = project.metadata || {};
-    return {
-      projectId: project.id,
-      category: project.category,
-      classification: meta.classification || null,
-      purpose: meta.purpose || null,
-      suggestions: meta.suggestions || [],
-      summary: meta.suggestionSummary || null,
-      generatedAt: meta.suggestedAt || null,
-    };
+    return app.suggestionsView(project);
   });
 
   r.post('/api/projects/:id/archive', ({ params }) => app.projectCard(app.archiveProject(params.id)));
