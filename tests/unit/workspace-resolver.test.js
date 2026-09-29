@@ -6,8 +6,9 @@ import path from 'node:path';
 import { findCandidates, recogniseCandidate, defaultSearchRoots } from '../../src/core/workspace-resolver.js';
 import { ProjectScanner } from '../../src/core/scanner.js';
 import { createFixtureProject } from '../../src/demo/fixture-factory.js';
+import { makeTempDir } from '../helpers/tmp.js';
 
-const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-resolver-'));
+const ROOT = makeTempDir('apc-resolver-');
 
 function mkdirp(p) { fs.mkdirSync(p, { recursive: true }); }
 

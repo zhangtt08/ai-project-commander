@@ -4,9 +4,9 @@
 | --- | --- |
 | Project Name | AI Project Commander (AI 项目管理中枢) |
 | Current Version | 0.9.0 |
-| Current Stage | DELIVERED (Stage 16 complete) |
-| Current Objective | 无 — MVP 交付完成；后续工作见 KNOWN_ISSUES.md 的 P2 列表 |
-| Overall Status | DELIVERED — P0 全部实现，verify 5/5 + E2E 12/12 |
+| Current Stage | v1.0 — 项目管理闭环已可用：本机项目发现 / 导入即分类 / 用途识别 / 可优化建议 / 删除可清源文件 / GitHub 私有仓库自动上传 / 原生桌面 exe |
+| Current Objective | 按需迭代；无遗留 P0/P1 |
+| Overall Status | verify 5/5：unit 203/203 + integration 43/43；桌面 exe 实测可启动服务并打开独立窗口 |
 | Workspace Path | `C:\Users\Administrator\Desktop\AI-Project-Commander` |
 
 ## Completed Modules
@@ -43,15 +43,17 @@ playwright 解析器文件行误判修复、阶段标题解析修复。
 
 无。无外部阻塞（不依赖任何付费 API 或第三方账号）。
 
-## Verification Status (recent)
+## Verification Status (2026-09-26 实测，Node v24.18.0)
 
-- Latest Build Status: `npm run build` → PASS (静态产物校验)
-- Latest Typecheck: `npm run typecheck` → PASS
-- Latest Lint: `npm run lint` → PASS
-- Latest Unit Test Status: `npm test` (unit) → PASS (详见 TEST_STATUS.md)
-- Latest Integration Test Status: `npm test` (integration) → PASS
-- Latest E2E Status: `npm run test:e2e` → PASS
-- 真实用例数、命令与耗时见 `docs/agent/TEST_STATUS.md`（不要在此重复猜测）。
+- Latest Build Status: `npm run build` → PASS
+- Latest Typecheck: `npm run typecheck` → PASS（81 files）
+- Latest Lint: `npm run lint` → PASS（0 violations）
+- Latest Unit Test Status: `npm run test:unit` → **PASS 142/142**
+- Latest Integration Test Status: `npm run test:integration` → **PASS 40/40**
+- Latest verify: `npm run verify` → **exit 0，5/5**
+- Latest E2E Status: **未执行** —— 本机缺少 Playwright Chromium，详见 KNOWN_ISSUES.md E2E-001
+- 历史说明：搬入本机首次实测时 `--all` 为 139/143（4 个文件被 libuv 断言杀死），
+  根因与修复见 TEST_STATUS.md Sequence 9。此前文档中"verify 5/5 + E2E 12/12"的记录不代表本机状态。
 
 ## Current Git State
 

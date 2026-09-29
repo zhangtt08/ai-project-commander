@@ -1,0 +1,18 @@
+{
+  "name": "AI Project Commander",
+  "short_name": "Commander",
+  "description": "AI 编码项目管理中枢：识别本机项目、自动分类、给出可优化的建议。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FCFCFC",
+  "theme_color": "#5E6AD2",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/app.ico", "sizes": "256x256", "type": "image/x-icon" }
+  ]
+}

@@ -38,11 +38,25 @@ async function serve(args) {
   const router = buildRouter(app);
   const server = createHttpServer({ router, app });
   app.startBackground();
+  const backfilled = app.backfillClassification();
+  if (backfilled) logger.info('classification_backfilled', { projects: backfilled });
 
-  // Demo mode: make sure a first-run experience is never an empty screen (requirement #59 / #50).
+  // First run: import the projects that are actually on this machine. Never fake data —
+  // the product must be usable the moment it opens.
   if (app.listProjects().length === 0 && args.demo !== 'false') {
-    logger.info('first_run_seeding_demo');
-    await app.seedDemoAndAnalyze({ runCommands: true });
+    logger.info('first_run_discovery');
+    try {
+      const found = app.discover({ maxDepth: 3, limit: 60 });
+      const targets = found.projects.filter((p) => !p.managed && p.confidence === 'high').slice(0, 20);
+      for (const target of targets) {
+        try {
+          await app.addProjectAndClassify(target.path, { name: target.name });
+        } catch { /* one unreadable folder must not abort first run */ }
+      }
+      logger.info('first_run_imported', { count: app.listProjects().length, scannedDirs: found.scannedDirs });
+    } catch (err) {
+      logger.warn('first_run_discovery_failed', { reason: err.message });
+    }
   }
 
   // Auto-fallback: if the port is taken by another local app, walk up instead of crashing.
@@ -89,7 +103,7 @@ async function serve(args) {
 }
 
 async function seedDemo(args) {
-  const app = new App();
+  const app = new App({ dataDir: process.env.COMMANDER_DATA_DIR || undefined });
   const results = await app.seedDemoAndAnalyze({ rebuild: args.rebuild === true, runCommands: args.commands !== 'false' });
   const dashboard = app.dashboard();
   process.stdout.write(`\n  Demo seed complete\n  ──────────────────\n`);

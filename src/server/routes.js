@@ -10,6 +10,7 @@ import { riskSummary } from '../core/engines/risk.js';
 import { regressionSummary } from '../core/engines/regression.js';
 import { defaultIgnoreList } from '../core/ignore-engine.js';
 import { truncate, toPosix, nowIso } from '../core/util.js';
+import { CATEGORY_DEFS } from '../core/categories.js';
 
 
 function needProject(app, id) { return app.getProject(id); }
@@ -28,6 +29,7 @@ export function buildRouter(app) {
     testParsers: describeParsers(),
     agentAdapters: ADAPTER_CATALOGUE,
     jobTypes: Object.values(JOB_TYPE),
+    categories: CATEGORY_DEFS,
     providers: app.providerRegistry.describe(),
   }));
 
@@ -35,7 +37,7 @@ export function buildRouter(app) {
 
   // ── Settings ────────────────────────────────────────────────────────────
   r.get('/api/settings', () => {
-    const keys = ['ai.provider', 'ai.baseUrl', 'ai.model', 'ai.timeoutMs', 'watcher.enabled', 'watcher.autoQuickScan', 'scan.maxFiles', 'workspace.searchRoots'];
+    const keys = ['ai.provider', 'ai.baseUrl', 'ai.model', 'ai.timeoutMs', 'watcher.enabled', 'watcher.autoQuickScan', 'scan.maxFiles', 'workspace.searchRoots', 'github.enabled', 'github.owner'];
     const out = {};
     for (const k of keys) {
       const v = app.repo.getSetting(k);
@@ -44,18 +46,25 @@ export function buildRouter(app) {
     }
     // The key is reported only as present/absent — never returned.
     out['ai.apiKey'] = app.repo.getSetting('ai.apiKey') ? '__stored__' : null;
+    // Same rule for the GitHub token: the UI only ever learns that one exists.
+    out['github.token'] = app.repo.getSetting('github.token') ? '__stored__' : null;
     out.providers = app.providerRegistry.describe();
     out.aiStats = app.structured.describeStats();
     return out;
   });
 
   r.patch('/api/settings', ({ body }) => {
-    const allowed = ['ai.provider', 'ai.baseUrl', 'ai.model', 'ai.timeoutMs', 'watcher.enabled', 'watcher.autoQuickScan', 'scan.maxFiles', 'workspace.searchRoots'];
+    const allowed = ['ai.provider', 'ai.baseUrl', 'ai.model', 'ai.timeoutMs', 'watcher.enabled', 'watcher.autoQuickScan', 'scan.maxFiles', 'workspace.searchRoots', 'github.enabled', 'github.owner'];
     const patch = {};
     for (const k of allowed) if (body[k] !== undefined) patch[k] = String(body[k]);
     if (body['ai.apiKey'] && body['ai.apiKey'] !== '__stored__') patch['ai.apiKey'] = String(body['ai.apiKey']);
+    if (body['github.token'] && body['github.token'] !== '__stored__') patch['github.token'] = String(body['github.token']).trim();
+    if (body['github.token'] === '') patch['github.token'] = '';
     const described = app.updateProviderSettings(patch);
     if (patch['watcher.autoQuickScan'] !== undefined) app.watcher.autoQuickScan = patch['watcher.autoQuickScan'] === 'true';
+    for (const k of ['github.enabled', 'github.owner', 'github.token']) {
+      if (patch[k] !== undefined) app.repo.setSetting(k, patch[k]);
+    }
     return { providers: described, aiStats: app.structured.describeStats() };
   });
 
@@ -84,16 +93,39 @@ export function buildRouter(app) {
     };
   });
 
+  // ── 电脑项目发现：这台电脑上有哪些项目 ──────────────────────────────────
+  r.get('/api/discovery', ({ query }) => app.discover({
+    roots: query.roots ? String(query.roots).split('|').filter(Boolean).slice(0, 12) : null,
+    maxDepth: Number(query.depth) || 3,
+    limit: Number(query.limit) || 300,
+  }));
+
+  r.post('/api/discovery/import', async ({ body }) => {
+    const paths = Array.isArray(body.paths) ? body.paths.slice(0, 50) : [];
+    if (!paths.length) throw new ValidationError('paths 不能为空', [{ path: 'paths', message: '至少选择一个项目目录' }]);
+    const imported = [];
+    const skipped = [];
+    for (const p of paths) {
+      try {
+        const project = await app.addProjectAndClassify(String(p), { category: body.category ? String(body.category) : null });
+        imported.push(app.projectCard(project));
+      } catch (err) {
+        skipped.push({ path: toPosix(String(p)), reason: err.message });
+      }
+    }
+    return { imported, skipped };
+  });
+
   // ── Projects ────────────────────────────────────────────────────────────
   r.get('/api/projects', ({ query }) => app.listProjects({ includeArchived: query.includeArchived === 'true' }).map((p) => app.projectCard(p)));
 
-  r.post('/api/projects', ({ body }) => {
+  r.post('/api/projects', async ({ body }) => {
     const workspacePath = requireParam(body, 'workspacePath', { maxLength: 1000 });
-    const project = app.addProject({
-      workspacePath,
+    const project = await app.addProjectAndClassify(workspacePath, {
       name: body.name ? String(body.name).slice(0, 200) : null,
       description: body.description ? String(body.description).slice(0, 2000) : '',
       ignorePatterns: Array.isArray(body.ignorePatterns) ? body.ignorePatterns.map(String).slice(0, 100) : [],
+      category: body.category ? String(body.category) : null,
     });
     return app.projectCard(project);
   });
@@ -124,6 +156,12 @@ export function buildRouter(app) {
       riskSummary: riskSummary(app.repo.list('risks', { project_id: project.id })),
       regressionSummary: regressionSummary(app.repo.list('regressions', { project_id: project.id })),
       memoryVersion: (app.memoryStore.latest(project.id) || {}).version || null,
+      category: project.category,
+      classification: meta.classification || null,
+      purpose: meta.purpose || null,
+      suggestions: meta.suggestions || [],
+      suggestionSummary: meta.suggestionSummary || null,
+      github: meta.github || null,
       lastScanDurationMs: meta.lastScanDurationMs || null,
     };
   });
@@ -133,17 +171,51 @@ export function buildRouter(app) {
     if (body.name !== undefined) app.renameProject(params.id, String(body.name).slice(0, 200));
     if (body.description !== undefined) app.setDescription(params.id, String(body.description).slice(0, 2000));
     if (body.ignorePatterns !== undefined) app.setIgnorePatterns(params.id, Array.isArray(body.ignorePatterns) ? body.ignorePatterns.map(String).slice(0, 100) : []);
+    if (body.category !== undefined) app.setCategory(params.id, body.category === '' ? 'auto' : String(body.category));
     return app.projectCard(app.getProject(params.id));
   });
 
+  /** Preview exactly what a source-purging delete would destroy. */
+  r.get('/api/projects/:id/deletion', ({ params }) => app.assessDeletion(params.id));
+
+  /**
+   * Delete. `?purge=true&confirm_token=<folder name>` also wipes the source directory —
+   * the user-initiated exception to ADR-009. Without `purge` only the record goes.
+   */
   r.delete('/api/projects/:id', ({ params, query }) => {
-    if (query.mode !== 'record_only') {
-      throw new ValidationError(
-      '拒绝删除：请传 ?mode=record_only —— Commander 绝不会删除源码目录',
-      [{ path: 'mode', message: 'record_only 仅删除 Commander 自身的数据库记录' }],
-    );
-    }
-    return app.deleteProjectRecord(params.id);
+    const purge = query.purge === 'true';
+    if (!purge) return app.deleteProject(params.id, { purgeSource: false });
+    const confirmToken = String(query.confirm_token ?? query.confirm ?? '');
+    return app.deleteProject(params.id, { purgeSource: true, confirmToken });
+  });
+
+  // ── GitHub 私有仓库自动上传 ─────────────────────────────────────────────
+  r.post('/api/projects/:id/github/publish', async ({ params }) => {
+    needProject(app, params.id);
+    const result = await app.publishToGithub(params.id);
+    return { result, project: app.projectCard(app.getProject(params.id)) };
+  });
+
+  r.post('/api/github/verify', async () => {
+    const settings = app.githubSettings();
+    if (!settings['github.token']) return { ok: false, reason: '尚未保存 GitHub 令牌。' };
+    const { validateToken } = await import('../core/github-publisher.js');
+    return validateToken({ settings });
+  });
+
+  // ── 可优化的建议 ────────────────────────────────────────────────────────
+  r.get('/api/projects/:id/suggestions', ({ params }) => {
+    const project = needProject(app, params.id);
+    const meta = project.metadata || {};
+    return {
+      projectId: project.id,
+      category: project.category,
+      classification: meta.classification || null,
+      purpose: meta.purpose || null,
+      suggestions: meta.suggestions || [],
+      summary: meta.suggestionSummary || null,
+      generatedAt: meta.suggestedAt || null,
+    };
   });
 
   r.post('/api/projects/:id/archive', ({ params }) => app.projectCard(app.archiveProject(params.id)));

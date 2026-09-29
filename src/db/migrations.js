@@ -408,6 +408,20 @@ export const MIGRATION_3 = {
   ],
 };
 
+/**
+ * v4: 项目分类 (category) must be a real column, not metadata — the Projects view groups
+ * and filters on it, and a user-set category must survive re-analysis.
+ */
+export const MIGRATION_4 = {
+  version: 4,
+  name: 'project_category',
+  up: [
+    `ALTER TABLE projects ADD COLUMN category TEXT NOT NULL DEFAULT 'uncategorized';`,
+    `ALTER TABLE projects ADD COLUMN category_manual INTEGER NOT NULL DEFAULT 0;`,
+    `CREATE INDEX IF NOT EXISTS idx_projects_category ON projects(category);`,
+  ],
+};
+
 /** FTS5 is optional — probed at runtime, with LIKE fallback (KNOWN_ISSUES TODO-P2-005). */
 export const FTS_MIGRATION = {
   version: 2,
@@ -421,5 +435,6 @@ export const FTS_MIGRATION = {
 };
 
 export function allMigrations({ ftsAvailable }) {
-  return ftsAvailable ? [...MIGRATIONS, FTS_MIGRATION, MIGRATION_3] : [...MIGRATIONS, MIGRATION_3];
+  const core = [...MIGRATIONS, MIGRATION_3, MIGRATION_4];
+  return ftsAvailable ? [...MIGRATIONS, FTS_MIGRATION, MIGRATION_3, MIGRATION_4] : core;
 }

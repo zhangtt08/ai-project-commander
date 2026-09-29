@@ -130,3 +130,20 @@ export function isInside(root, target) {
   const rel = path.relative(r, t);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
+
+/**
+ * Expand a Windows 8.3 short path (C:\Users\ADMINI~1\...) to its long form.
+ *
+ * libuv asserts that a directory-change notification's filename begins with the
+ * watched path, but Windows reports notifications using long names. Watching a
+ * short-form path therefore aborts the entire Node process on the first event —
+ * no JS exception, so no try/catch can contain it. Accounts with names longer
+ * than 8 characters (e.g. "Administrator") get short forms from os.tmpdir() and
+ * from some shell integrations, so every path that reaches fs.watch goes through
+ * here first.
+ */
+export function expandShortPath(p) {
+  if (process.platform !== 'win32' || typeof p !== 'string' || !p) return p;
+  if (!/[~]\d/.test(p)) return p;
+  try { return fs.realpathSync.native(p) || p; } catch { return p; }
+}

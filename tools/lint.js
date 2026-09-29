@@ -56,6 +56,15 @@ for (const file of SRC) {
         // workspace-resolver.js: read-only directory probing for drag & drop
         // import (readdirSync/statSync/existsSync only — never writes, ADR-009)
         'src/core/workspace-resolver.js',
+        // discovery.js: read-only machine-wide walk for "这台电脑上有哪些项目"
+        // (readdirSync/statSync only, never writes — ADR-009 holds)
+        'src/core/discovery.js',
+        // source-purge.js: the ONE user-initiated deletion path. It is exempt from the
+        // read-only rule by design (the product requirement is 删除项目后清除源文件),
+        // but assessPurgeTarget() refuses drive roots / home / Desktop / shallow paths /
+        // Commander's own data dir, and purgeDirectory() demands an echoed token.
+        // Guarded by tests/unit/source-purge.test.js.
+        'src/core/source-purge.js',
       ];
       if (r.startsWith('src/core/') && !allowed.includes(r)) {
         violations.push(`${loc} — direct node:fs import in src/core is not allowed outside ${allowed.join(', ')} (ADR-004/ADR-009)`);
@@ -68,7 +77,7 @@ for (const file of SRC) {
       // demo/fixture-factory.js writes ONLY into Commander's own data/demo-projects
       // directory when seeding demo data — never into a managed workspace (ADR-009,
       // enforced by tests/integration/security.test.js).
-      const allowed = ['src/core/fs-safe.js', 'src/core/logger.js', 'src/db/database.js', 'src/core/app.js', 'src/server/cli.js', 'src/server/routes.js', 'src/demo/fixture-factory.js'];
+      const allowed = ['src/core/fs-safe.js', 'src/core/logger.js', 'src/db/database.js', 'src/core/app.js', 'src/server/cli.js', 'src/server/routes.js', 'src/demo/fixture-factory.js', 'src/core/source-purge.js'];
       if (r.startsWith('src/') && !allowed.includes(r)) {
         violations.push(`${loc} — filesystem write operations are restricted (ADR-009); found in ${r}`);
       }

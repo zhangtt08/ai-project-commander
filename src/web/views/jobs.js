@@ -24,7 +24,11 @@ export async function render(mode = 'jobs') {
       { label: '结束于', render: (r) => (r.finished_at ? fmt.rel(r.finished_at) : '—') },
       { label: '错误', render: (r) => (r.error ? h('span', { class: 'small', title: r.error, text: fmt.truncate(r.error, 70) }) : '—') },
       { label: '', render: (r) => (r.status === 'queued' || r.status === 'running'
-        ? h('button', { class: 'btn btn-sm', text: '取消', onClick: async () => { await api.cancelJob(r.id); toast('已取消', 'ok'); render('jobs'); } })
+        ? h('button', { class: 'btn btn-sm', text: '取消', onClick: async () => {
+          try { await api.cancelJob(r.id); toast('已取消', 'ok'); }
+          catch (err) { toast(err.message, 'error'); }
+          render('jobs');
+        } })
         : null) },
     ], jobs, { empty: '暂无任务。' }) : stateEmpty('队列为空', '在项目中运行一次扫描即可创建任务。')),
   ]), { loadingLabel: '正在加载队列…' });
@@ -43,6 +47,6 @@ async function renderEvents() {
         h('div', { text: e.message }),
         h('div', { class: 'evidence', text: `${e.type}${e.project_id ? ` · ${e.project_id}` : ''}` }),
       ]),
-    ]))) : stateEmpty('No events recorded yet')), { loadingLabel: '正在加载事件…' });
+    ]))) : stateEmpty('还没有记录任何事件')), { loadingLabel: '正在加载事件…' });
 }
 

@@ -9,8 +9,9 @@ import { parseTestOutput, stripAnsi } from '../../src/core/test-parser.js';
 import { detectCommand, detectAllCommands } from '../../src/core/build-detect.js';
 import { parsePorcelainSafe } from './helpers/porcelain.js';
 import { createFixtureProject, applyRegression, initGitRepo } from '../../src/demo/fixture-factory.js';
+import { makeTempDir } from '../helpers/tmp.js';
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'apc-cmd-'));
+const tmp = () => makeTempDir('apc-cmd-');
 
 describe('CommandRunner security classification', () => {
   test('allows the documented read-only and validation commands', () => {

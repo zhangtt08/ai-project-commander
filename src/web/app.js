@@ -9,6 +9,8 @@ export const state = {
   dashboard: null,
   attention: null,
   sidebarCounts: { attention: 0, projects: 0 },
+  /** Projects with a scan queued by this browser session — see scheduleScanRefresh(). */
+  scanPending: new Set(),
 };
 
 const NAV = [
@@ -32,8 +34,26 @@ export function setTopbar(title, subtitle = '', actions = []) {
     h('h1', { text: title }),
     subtitle ? h('div', { class: 'subtitle', text: subtitle }) : null,
   ]));
-  bar.appendChild(h('div', { class: 'topbar-actions' }, actions));
+  const input = h('input', {
+    class: 'topbar-search',
+    type: 'search',
+    placeholder: '搜索项目、任务或关键词…',
+    'aria-label': '全局搜索',
+    onKeydown: (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        Router.go(`/search?q=${encodeURIComponent(input.value.trim())}`);
+      }
+    },
+  });
+  bar.appendChild(h('div', { class: 'topbar-actions' }, [
+    h('div', { class: 'searchbox' }, [input, h('kbd', { text: 'Ctrl K' })]),
+    ...actions,
+  ]));
+  focusSearch = () => input.focus();
 }
+
+let focusSearch = null;
 
 export function renderNav() {
   const nav = document.getElementById('nav');
@@ -58,7 +78,7 @@ export function renderNav() {
 export function applyTheme(theme) {
   const t = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = t;
-  try { localStorage.setItem('commander.theme', t); } catch { /* private mode */ }
+  try { localStorage.setItem('commander.theme.v2', t); } catch { /* private mode */ }
   const btn = document.getElementById('theme-toggle');
   if (btn) {
     clear(btn);
@@ -106,7 +126,7 @@ function renderSidebarTools() {
     applyTheme(current === 'dark' ? 'light' : 'dark');
   } });
   tools.appendChild(toggle);
-  applyTheme(document.documentElement.dataset.theme || 'dark');
+  applyTheme(document.documentElement.dataset.theme || 'light');
 }
 
 async function boot() {
@@ -150,7 +170,13 @@ async function boot() {
   setInterval(() => { if (!document.hidden) refreshShellData(); }, 20000);
   window.addEventListener('hashchange', () => setTimeout(renderNav, 0));
   document.addEventListener('keydown', (e) => {
-    if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      if (focusSearch) focusSearch();
+      return;
+    }
+    if (e.key === '/' && !typing) {
       e.preventDefault();
       Router.go('/search');
     }
@@ -162,8 +188,8 @@ boot().catch((err) => {
   const view = document.getElementById('view');
   clear(view);
   view.appendChild(h('div', { class: 'state error' }, [
-    h('h3', { text: 'The interface failed to start' }),
+    h('h3', { text: '界面启动失败' }),
     h('div', { class: 'small', text: err.message }),
-    h('div', { class: 'evidence', text: 'Check that the API server is running (npm run dev) and reload.' }),
+    h('div', { class: 'evidence', text: '请确认 API 服务已启动（npm run dev），然后刷新页面。' }),
   ]));
 });

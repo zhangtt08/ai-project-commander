@@ -19,15 +19,26 @@ from real engineering evidence gathered on your disk.
 
 ## What is Project Commander
 
-A local-first desktop-class web application that:
+A local-first desktop application that:
 
-1. **Registers** local workspaces (read-only — it never writes into your projects).
-2. **Scans** them: stack, structure, specs, TODO markers, sensitive files.
-3. **Runs** the detected build / test commands inside strict safety rails.
-4. **Snapshots** the result and **detects regressions** between snapshots.
-5. **Derives** stages, tasks, acceptance criteria, health, risk and progress.
-6. **Recommends** the next action and **generates** a ready-to-paste agent prompt.
-7. **Tracks** every prompt → execution → evidence → acceptance link.
+1. **Discovers** the coding projects already on your machine and **registers** them.
+2. **Classifies** each one (AI 智能体 / Web 应用 / 浏览器插件 / 桌面应用 / 数据与自动化 …)
+   and states the evidence behind the label.
+3. **Identifies its purpose** from its own README, `package.json` or spec — and says so when
+   the repository declares nothing instead of inventing a purpose.
+4. **Scans** stack, structure, specs, TODO markers and sensitive files.
+5. **Runs** the detected build / test commands inside strict safety rails.
+6. **Snapshots** the result and **detects regressions** between snapshots.
+7. **Derives** stages, tasks, acceptance criteria, health, risk and progress.
+8. **Proposes optimisations** — every one quoting the number it came from.
+9. **Recommends** the next action and **generates** a ready-to-paste agent prompt.
+10. **Publishes** the project to your own **private** GitHub repository on import, if you
+    enable it.
+11. **Tracks** every prompt → execution → evidence → acceptance link.
+
+The **analysis pipeline is read-only**: scanning, building and testing never modify your
+projects. Two operations do write, and only when you explicitly ask for them — deleting a
+project's source files, and publishing it to GitHub. See [Security Model](#security-model).
 
 ## Core Features
 
@@ -80,8 +91,12 @@ once on failure, and falls back to a deterministic mock that is *labelled as moc
 
 ## Quick Start
 
-**Windows 一键启动**：双击项目根目录的 `启动.bat`（或桌面上的 `启动AI项目指挥官.bat`）——
-它会启动服务并把实际地址（含端口自动顺延后的）写进 `data\server-url.txt` 再自动打开浏览器。
+**Windows 桌面方式（推荐）**：双击桌面上的 **AI Project Commander** 快捷方式，或
+`desktop\AIProjectCommander.exe`。它是一个原生 WinForms 外壳（自带图标、独立任务栏身份与
+托盘），负责拉起本地服务并用 Edge 应用模式打开独立窗口；服务已在运行时它只会把窗口带回前台。
+
+**Windows 脚本方式**：双击根目录的 `启动.bat`。若 exe 尚未构建，它会自动退回"启动服务 +
+打开浏览器"的方式，并提示如何构建 exe。
 
 命令行方式：
 
@@ -91,34 +106,38 @@ npm install        # no-op (zero dependencies) — kept for convention
 npm run dev        # → http://127.0.0.1:8787（被占用时自动 +1，横幅会打印实际地址）
 ```
 
-On first start Commander seeds and analyses three demo projects. To re-seed:
-
-```bash
-npm run seed:demo
-```
+**首次启动不需要任何准备，也不会塞演示数据**：Commander 会扫描这台电脑（主目录、桌面、
+文档、source 以及 D:/E:/F: 盘），把真正的项目目录导入并完成分类与用途识别，通常 2 秒内
+就能看到有内容的仪表盘。想改搜索范围：设置 → 文件夹识别（拖拽导入）→ 搜索根目录。
 
 ### Adding your own project
 
-`Projects → Add project` → enter an absolute path. Commander will:
+`+ 添加项目` opens a dialog with two tabs:
 
-1. scan it (structure, stack, specs, markers, sensitive files),
-2. read its git state,
-3. detect and run its build/test commands,
-4. produce a snapshot, health verdict, risk list and next action.
+- **扫描这台电脑** — lists project folders found on disk (with ecosystem, git state and last
+  modification), ticks nothing by default, marks already-managed ones so they can't be
+  added twice, and lets you import several at once.
+- **输入路径** — an absolute path, plus an optional name and category.
 
-## Demo Mode
+Either way Commander then:
 
-No API key required. The three demo projects are real repositories generated on disk
-under `data/demo-projects/`, built and tested by real subprocesses:
+1. scans it (structure, stack, specs, markers, sensitive files),
+2. classifies it and identifies its purpose from real evidence,
+3. produces optimisation suggestions, each quoting its evidence,
+4. reads its git state, and detects and runs its build/test commands,
+5. produces a snapshot, health verdict, risk list and next action,
+6. and — if enabled in Settings — creates your **private** GitHub repo and pushes to it in
+   the background, without delaying the import.
 
-| Demo | Health | Evidence |
-| --- | --- | --- |
-| ShopFlow Web | healthy · gate PASS | build pass, unit 6/6, e2e 22/22 |
-| FitPlan Tracker | warning · gate FAIL | unit 2/2, **e2e 22/25** with 3 captured failures |
-| Legacy Billing | critical | build fail, unit 3/5, e2e 5/6 |
+## Demo projects (test fixtures only)
 
-Every AI-flavoured result is produced by the deterministic Mock provider and labelled
-`mock (deterministic)` in the UI — nothing pretends to be a real LLM.
+The product never seeds demo data. Three demo projects exist purely as deterministic
+fixtures for the E2E suite; `scripts/run-e2e.js` seeds them into an **isolated temp data
+dir** and refuses to continue if the seed reports any other directory. To seed manually:
+
+```bash
+npm run seed:demo   # honours COMMANDER_DATA_DIR; set it, or you write into your real DB
+```
 
 ## Development
 
@@ -177,8 +196,9 @@ deterministic mock — `JSON.parse` is never trusted on its own.
 | Surface | Guarantee |
 | --- | --- |
 | Sensitive files | `.env`, `*.pem`, `*.key`, `id_rsa`, `credentials*`, `secrets*`, `tokens*`, `.npmrc`, `.pypirc`, cloud credential dirs… are **detected but never read** — not into the DB, logs, or AI requests (enforced by tests) |
-| Command execution | One `CommandRunner`; `shell: false` always; an allowlist (git read-only, `npm run/test`, `npx vitest/playwright`) plus a deny list (`rm`, `del`, `format`, `git reset --hard`, `git clean`, `rebase`, `push --force`, `npm install`…) |
-| Managed workspaces | **Read-only by construction** — the codebase contains no write path into a managed workspace (verified by an mtime-based test) |
+| Managed workspaces | The **analysis pipeline** (scan / build / test / regress) is read-only — enforced by an mtime-based test. Two **user-initiated** operations are the sanctioned exceptions, both gated: ① deleting a project can also wipe its source directory, but only after `assessPurgeTarget()` rejects drive roots, your home/Desktop/Documents, shallow paths and Commander's own data dir, **and** you type the folder name back as confirmation; ② GitHub publishing writes only into the project's own `.git` and pushes to a `github.com` remote — `ensureOriginRemote()` refuses any other host so your code cannot be redirected elsewhere |
+| Command execution | One `CommandRunner`; `shell: false` always; an allowlist (git read-only inspection; `npm run/test`; `npx vitest/playwright`; and `git init/add/commit/push/remote` reserved for the explicit publish action) plus a deny list (`rm`, `del`, `format`, `git reset --hard`, `git clean`, `rebase`, `push --force`, `npm install`…). The publish verbs are deliberately **not** auto-run by any scan |
+| GitHub token | Kept in the local SQLite settings table, never returned to the browser, never placed in a command line, never written into the project's `.git/config` — it travels to git only via `GIT_CONFIG_*` environment variables, and every logged or returned string is scrubbed |
 | AI data boundary | Only paths, counts, statistics, short excerpts and failure messages are sent; secrets are masked before transmission |
 | Secrets | API keys stay in the local SQLite settings table; the API never returns them |
 | Frontend | No keys, no `innerHTML` with dynamic data, no eval |
@@ -200,6 +220,20 @@ See `GET /api/security` and the in-app **Security** page.
 - `node:sqlite` prints an `ExperimentalWarning` on Node 22 — expected, harmless.
 - Test-output parsing understands vitest / jest / playwright reporters; other formats are
   reported as *unparseable* rather than guessed.
+- The desktop shell is a native WinForms `.exe` compiled with the in-box `csc.exe`; the
+  window itself is rendered by the locally installed Edge in `--app` mode, not Electron.
+  Same Chromium engine, but it is not a single self-contained installer — another machine
+  needs Node 22+ and Edge. WebView2's managed assemblies are absent here and the npm
+  registry was too slow for Electron, so this was the zero-dependency route (ADR-001).
+- **The Playwright E2E suite has not been executed on this machine** — Chromium is not
+  installed and downloading it was declined. 270 unit/integration tests pass, and the UI
+  was verified by driving the running app and capturing real window pixels, but the 21-step
+  E2E run is unverified.
+- **GitHub publishing is verified only up to GitHub's answer.** The private-repo create
+  request, credential handling, commit identity, remote guard and an actual push are all
+  covered by tests (a local fake API and a local bare remote), and the failure paths were
+  exercised against live `api.github.com`. The one thing not proven end-to-end is GitHub
+  accepting a real token — that needs a user-supplied PAT.
 
 ## Roadmap
 

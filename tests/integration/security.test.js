@@ -13,6 +13,7 @@ import path from 'node:path';
 import { App } from '../../src/core/app.js';
 import { createFixtureProject } from '../../src/demo/fixture-factory.js';
 import { logger } from '../../src/core/logger.js';
+import { makeTempDir } from '../helpers/tmp.js';
 
 const SECRET_MARKERS = [
   'sk_live_THIS_MUST_NEVER_BE_READ',
@@ -26,7 +27,7 @@ let projectId;
 let mtimesBefore;
 
 before(async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-sec-'));
+  const root = makeTempDir('apc-sec-');
   app = new App({ dataDir: path.join(root, 'data'), logLevel: 'error' });
   dir = path.join(root, 'target-workspace');
   createFixtureProject(dir, 'healthy');
@@ -152,7 +153,7 @@ describe('a managed workspace is read-only', () => {
 
 describe('degraded environments are handled honestly', () => {
   test('a workspace that is not a git repository reports it instead of failing', async () => {
-    const root2 = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-nogit-'));
+    const root2 = makeTempDir('apc-nogit-');
     const dir2 = path.join(root2, 'nogit');
     createFixtureProject(dir2, 'not_a_repo');
     const project = app.addProject({ workspacePath: dir2, name: 'No git' });
@@ -165,8 +166,7 @@ describe('degraded environments are handled honestly', () => {
   });
 
   test('an empty directory scans cleanly and reports unknown health', async () => {
-    const dir3 = path.join(os.tmpdir(), `apc-empty-${Date.now()}`);
-    fs.mkdirSync(dir3, { recursive: true });
+    const dir3 = makeTempDir('apc-empty-');
     const project = app.addProject({ workspacePath: dir3, name: 'Empty' });
     const out = await app.orchestrator.fullScan(project.id, { runCommands: false, suites: [] });
     assert.equal(out.metadata.fileCount, 0);

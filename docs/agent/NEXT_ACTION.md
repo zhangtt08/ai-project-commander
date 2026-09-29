@@ -4,30 +4,33 @@
 
 ## Last Completed
 
-全部 16 个 Stage。**MVP 已交付**：P0 全模块实现，`npm run verify` 5/5 通过
-（typecheck / lint / build / unit 133 / integration 40），`npm run test:e2e` 12/12 步通过
-（真实 Chromium）。详见 `docs/agent/TEST_STATUS.md`。
+2026-09-26 复核：修复了搬入本机后 4 个测试文件被 **libuv C 层 abort** 杀死的根因
+（`fs.watch` 监控 Windows 8.3 短名路径会整进程崩溃），并修掉 3 个真实的"无证据断言"缺陷
+（e2e 0/0 failing、零用例判 PASS、git-unavailable 被降级）与 1 个项目页每 3 秒自我重载的缺陷。
+前端 13 个标签页已整体本地化。当前：unit 142/142 + integration 40/40 + verify 5/5。
 
 ## Current Task
 
-无。当前没有进行中的任务，也没有未完成的 P0 工作单元。
+1. **E2E 未验证**：界面文案已中文化、`e2e/e2e_test.py` 的 23 处断言已同步，但本机没有
+   Playwright Chromium，一次都没跑过。先 `python -m playwright install chromium` 再
+   `node scripts/run-e2e.js`，按失败步骤逐条核对（不要改断言去迁就实现，除非确认界面措辞有误）。
+2. **WATCH-001 已撤销**：两组受控实验（6/6 与 1→2→3→4）证明投递正常，原结论是探测脚本缺陷。
+3. 可选：`HEAD` 请求一律 404（http-server 只认 GET），若要接探活脚本需补 HEAD 分支。
 
 ## If You Are A Fresh Agent — Do Exactly This
 
 ```bash
 cd "C:\Users\Administrator\Desktop\AI-Project-Commander"
-node --version            # 需 >= 22.5.0（使用内置 node:sqlite）
-npm install               # 零依赖，瞬时完成
-npm run verify            # typecheck + lint + build + unit(133) + integration(40)，约 70s
-npm run dev               # 启动 http://127.0.0.1:8787（首启自动播种并分析 3 个 Demo 项目）
+node --version            # 需 >= 22.5.0（使用内置 node:sqlite）；本机 v24.18.0
+npm run verify            # typecheck + lint + build + unit(142) + integration(40)
+npm run dev               # 启动 http://127.0.0.1:8787
 ```
 
 然后：
 
-1. 打开 `http://127.0.0.1:8787`：Dashboard 应显示 3 个 Demo 项目
-   （ShopFlow Web=healthy / FitPlan Tracker=warning / Legacy Billing=critical）。
-2. `npm run test:e2e` 重跑真实 Chromium E2E（约 2.5 分钟，12 步）。
-3. 若要继续开发，从下方 "Next Task After Completion" 的 P2 列表挑一项。
+1. 打开 `http://127.0.0.1:8787`，逐标签点一遍项目详情页（中文文案与数字是否符合预期）。
+2. 若要跑 E2E，先装 Chromium（见上）；未装时 `npm run test:e2e` 必然失败，这不是回归。
+3. 若要继续开发，从 KNOWN_ISSUES.md 的 WATCH-001 或 P2 列表挑一项。
 
 ## Relevant Files
 
@@ -69,7 +72,11 @@ npm run seed:demo       # 重建 3 个 Demo 项目（真实构建+测试）
 
 ## Do Not Break
 
-1. 被管理的 Workspace **只读**——不得新增任何写入被管理项目文件的代码路径（ADR-009，有测试守护）。
+1. 分析流水线（扫描 / 构建 / 测试 / 回归）对被管理的 Workspace **只读**——不得新增任何在
+   扫描路径上写入被管理项目文件的代码（ADR-009，有测试守护）。
+   例外只有两条、且必须由用户明确动作触发：`src/core/source-purge.js`（删除源目录，
+   需回显确认口令）和 `src/core/github-publisher.js`（写 `.git` 并推送）。详见
+   KNOWN_ISSUES.md DEBT-010；不要"顺手"把它们的 lint 豁免改回去。
 2. 敏感文件内容绝不落库/落日志/进 AI 请求（ADR-004，有测试守护）。
 3. 所有外部命令必须走 `CommandRunner`（ADR-003，lint 守护）。
 4. 迁移只增不改（已有 v1/v2/v3）。

@@ -132,13 +132,28 @@ Progress 只由 `StageCompletion × weight + TaskCompletion × weight + Acceptan
 
 ## ADR-009 — 被管理 Workspace 的只读保证
 
-**Status:** accepted
+**Status:** accepted → **amended 2026-09-29**（原绝对表述已不成立，见下）
 
 **Chosen Approach**
 所有涉及被管理项目的文件系统调用只使用 `readFile / readdir / stat / lstat`，代码库中不存在指向被管理路径的
 `writeFile / appendFile / mkdir / rm / rename / copyFile`。安全测试在 fixture 项目上记录全量文件 mtime，
 执行完整分析链路后断言 mtime 无变化。
 唯一例外：Commander 自己的 `data/` 目录。
+
+### Amendment (2026-09-29) — 保证范围收窄到「分析链路」
+
+需求新增了两项本质上必须写入/删除被管理目录的能力，因此上面那句"代码库中不存在"已经不成立。
+**本 ADR 现在约束的是分析链路（扫描 / 构建 / 测试 / 回归 / 漂移），这部分仍然绝对只读，
+mtime 守护测试仍然有效。** 被放行的是两条只能由用户明确动作触发的路径：
+
+| 例外 | 文件 | 触发方式 | 守护 |
+| --- | --- | --- | --- |
+| 删除项目时清除源文件 | `src/core/source-purge.js` | UI 勾选"同时删除源文件" + 回显项目名 | `assessPurgeTarget()` 拒绝磁盘根目录、home、Desktop/Documents/Downloads、层级 < 2、Commander 自身数据目录；`tests/unit/source-purge.test.js` 逐条守护 |
+| 发布到私有 GitHub 仓库 | `src/core/github-publisher.js` | 设置里启用并配置 PAT | 只写项目自身 `.git`；`ensureOriginRemote()` 只接受 github.com，防止代码被推往他处；令牌只经 `GIT_CONFIG_*` 环境变量传递，不进 argv / 日志 / 数据库 / `.git/config` |
+
+这两处对应 `tools/lint.js` 的白名单豁免。**豁免的理由写在守护测试上，不要"顺手修回去"**；
+`git init/add/commit/push/remote` 也只为发布动作放行，任何扫描都不会自动执行它们。
+详见 KNOWN_ISSUES.md 的 DEBT-010 / BUG-014。
 
 ---
 

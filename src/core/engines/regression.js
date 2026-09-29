@@ -131,5 +131,12 @@ export function regressionSummary(regressions) {
   const byType = {};
   for (const r of regressions) byType[r.type] = (byType[r.type] || 0) + 1;
   const worst = regressions.reduce((a, b) => (SEVERITY_RANK[b.severity] > SEVERITY_RANK[a.severity] ? b : a), regressions[0]);
-  return { count: regressions.length, worst: worst.severity, byType, open: regressions.filter((r) => !r.acknowledged).length };
+  const times = regressions.map((r) => r.ts).filter(Boolean).sort();
+  return {
+    count: regressions.length,
+    worst: worst.severity,
+    byType,
+    open: regressions.filter((r) => !r.acknowledged).length,
+    latestTs: times.length ? times[times.length - 1] : null,
+  };
 }

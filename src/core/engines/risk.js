@@ -197,11 +197,14 @@ export function scanForMockLeak(root, files) {
 export function riskSummary(risks) {
   const bySeverity = { low: 0, medium: 0, high: 0, critical: 0 };
   for (const r of risks) if (r.status === 'open') bySeverity[r.severity] += 1;
+  const open = risks.filter((r) => r.status === 'open');
+  const times = open.map((r) => r.created_at || r.first_seen_at).filter(Boolean).sort();
   return {
     total: risks.length,
-    open: risks.filter((r) => r.status === 'open').length,
+    open: open.length,
     bySeverity,
     worst: risks.length ? risks[0].severity : null,
+    latestOpenAt: times.length ? times[times.length - 1] : null,
   };
 }
 

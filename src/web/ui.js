@@ -82,18 +82,39 @@ const STATUS_CLASS = {
   unsupported: 'badge-unsupported', unknown: 'badge-unknown', error_unparsed: 'badge-warning',
 };
 const STATUS_ZH = {
-  pass: '通过', fail: '失败', error: '错误', timeout: '超时',
+  pass: '通过', fail: '失败', failed: '失败', error: '错误', timeout: '超时',
   unsupported: '不适用', unknown: '未知', queued: '排队中', running: '运行中',
   completed: '已完成', cancelled: '已取消', generated: '已生成', executed: '已执行',
 };
 const GATE_ZH = { PASS: '通过', FAIL: '未通过', BLOCKED: '阻塞', UNKNOWN: '未知' };
+const PROJECT_STATUS_ZH = {
+  planning: '规划中', developing: '开发中', testing: '测试中', review: '评审中',
+  blocked: '已阻塞', ready: '就绪', released: '已发布', archived: '已归档',
+};
+
+export function healthLabel(status) { return HEALTH_ZH[status] || status || '未知'; }
+export function runStatusLabel(status) { return STATUS_ZH[status] || status || '未知'; }
+export function projectStatusLabel(status) { return PROJECT_STATUS_ZH[status] || status || '未知'; }
+
+/** Display labels for task / risk / issue / ADR / severity enums. Keys stay English on the wire. */
+const ENUM_ZH = {
+  todo: '待办', in_progress: '进行中', blocked: '已阻塞', done: '已完成', cancelled: '已取消',
+  open: '待处理', resolved: '已解决',
+  proposed: '待评审', accepted: '已采纳', deprecated: '已废弃', superseded: '已被取代',
+  satisfied: '已满足', unmet: '未满足',
+  critical: '危急', high: '高', medium: '中', low: '低', info: '提示',
+  unknown: '未知', manual: '手动', deterministic: '确定性', inferred: '推断',
+  aligned: '一致', possible_drift: '可能漂移', drifted: '已漂移',
+  stages: '阶段', tasks: '任务', acceptance: '验收',
+};
+export function enumLabel(value) { return ENUM_ZH[value] || value || ''; }
 
 export function healthBadge(status) {
-  return h('span', { class: `badge ${HEALTH_CLASS[status] || 'badge-unknown'}`, text: HEALTH_ZH[status] || status || '未知' });
+  return h('span', { class: `badge ${HEALTH_CLASS[status] || 'badge-unknown'}`, text: healthLabel(status) });
 }
 
 export function statusBadge(status) {
-  return h('span', { class: `badge ${STATUS_CLASS[status] || 'badge-unknown'}`, text: STATUS_ZH[status] || status || '未知' });
+  return h('span', { class: `badge ${STATUS_CLASS[status] || 'badge-unknown'}`, text: runStatusLabel(status) });
 }
 
 export function gateBadge(gate) {
@@ -106,6 +127,20 @@ export function mockBadge(provider) {
   if (!provider) return null;
   if (provider === 'mock') return h('span', { class: 'badge badge-mock', title: '由确定性 Mock 提供方生成——不是真实大模型', text: 'mock（确定性）' });
   return h('span', { class: 'badge badge-info', text: provider });
+}
+
+/**
+ * A test-suite label. A run with no parsed cases never renders as a count: "0/0"
+ * reads as "zero of zero tests failed", and a green 通过 would claim success from
+ * no evidence at all.
+ */
+export function suiteResult(run) {
+  if (!run) return '未运行';
+  if (!run.total) {
+    if (run.status === 'pass' || run.status === 'unknown') return '未解析到用例';
+    return runStatusLabel(run.status);
+  }
+  return `${run.passed}/${run.total}`;
 }
 
 export function metric(label, value, { foot = '', cls = '', sm = false } = {}) {
@@ -163,7 +198,7 @@ export function stateError(err, onRetry = null) {
     h('h3', { text: err && err.message ? err.message : '出了点问题' }),
     err && err.hint ? h('div', { class: 'small', text: err.hint }) : null,
     err && err.code ? h('div', { class: 'evidence', text: `code: ${err.code}` }) : null,
-    onRetry ? h('div', { style: { marginTop: '10px' } }, h('button', { class: 'btn btn-sm', text: 'Retry', onClick: onRetry })) : null,
+    onRetry ? h('div', { style: { marginTop: '10px' } }, h('button', { class: 'btn btn-sm', text: '重试', onClick: onRetry })) : null,
   ]);
 }
 
@@ -182,7 +217,7 @@ export function modal(title, bodyContent, { onClose = null } = {}) {
   const box = h('div', { class: 'modal' }, [
     h('div', { class: 'modal-head' }, [
       h('strong', { text: title }),
-      h('button', { class: 'btn btn-sm btn-ghost', text: 'Close', onClick: close, 'aria-label': 'Close dialog' }),
+      h('button', { class: 'btn btn-sm btn-ghost', text: '关闭', onClick: close, 'aria-label': 'Close dialog' }),
     ]),
     h('div', { class: 'modal-body' }, bodyContent),
   ]);
@@ -197,7 +232,7 @@ export function modal(title, bodyContent, { onClose = null } = {}) {
 
 export function evidenceList(evidence) {
   const list = Array.isArray(evidence) ? evidence : [];
-  if (!list.length) return h('span', { class: 'evidence', text: 'no evidence recorded' });
+  if (!list.length) return h('span', { class: 'evidence', text: '没有记录任何证据' });
   return h('div', { class: 'tag-list' }, list.slice(0, 12).map((e) => h('span', { class: 'chip', title: e.note || '', text: `${e.type}: ${fmt.truncate(e.ref, 56)}` })));
 }
 

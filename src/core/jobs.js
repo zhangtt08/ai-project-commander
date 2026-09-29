@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import { JOB_TYPE, JOB_STATUS, EVENT_TYPE } from '../domain/constants.js';
 import { newId, nowIso, sleep, sleepCancellable } from './util.js';
+import { expandShortPath } from './fs-safe.js';
 import { logger } from './logger.js';
 
 const qlog = logger.child('queue');
@@ -166,7 +167,7 @@ export class WorkspaceWatcher {
     if (this.watchers.has(project.id)) return { watching: true, already: true };
     let watcher;
     try {
-      watcher = fs.watch(project.workspace_path, { recursive: true, persistent: false }, (eventType, filename) => {
+      watcher = fs.watch(expandShortPath(project.workspace_path), { recursive: true, persistent: false }, (eventType, filename) => {
         this.#onChange(project, filename || '');
       });
     } catch (err) {

@@ -28,6 +28,10 @@ import { ProjectMemoryStore, AdrStore } from './engines/memory.js';
 import { NextActionEngine } from './engines/next-action.js';
 import { PromptGenerator } from './engines/prompt-generator.js';
 import { buildHandoffPackage } from './engines/handoff.js';
+import { classifyProject, identifyPurpose, CATEGORY_KEYS, categoryLabel } from './categories.js';
+import { buildSuggestions, summarizeSuggestions } from './engines/suggestions.js';
+import { discoverProjects as scanDiskForProjects, defaultRoots } from './discovery.js';
+import { assessPurgeTarget, purgeDirectory, formatBytes } from './source-purge.js';
 import { EventLog } from './events.js';
 import { SearchService } from './search.js';
 import { AnalysisQueue, WorkspaceWatcher } from './jobs.js';
@@ -39,8 +43,9 @@ import { OpenAICompatibleProvider } from './ai/openai-provider.js';
 import { StructuredRunner } from './ai/structured.js';
 import { AIService } from './ai/service.js';
 import { ensureDemoProjects, demoProjectDefinitions } from '../demo/fixture-factory.js';
-import { EVENT_TYPE, PROJECT_STATUS, PROJECT_HEALTH, DEFAULT_SCAN_LIMITS } from '../domain/constants.js';
+import { EVENT_TYPE, PROJECT_STATUS, PROJECT_HEALTH, DEFAULT_SCAN_LIMITS, SENSITIVE_PATTERNS } from '../domain/constants.js';
 import { newId, nowIso, toPosix } from './util.js';
+import { expandShortPath } from './fs-safe.js';
 import { WorkspaceError, ConflictError, NotFoundError } from '../domain/errors.js';
 
 /** Thin adapters so engines expose a uniform `.detect()/.evaluate()` surface. */
@@ -48,6 +53,8 @@ class RiskEngine { detect(input) { return analyzeRisks(input); } }
 class AcceptanceGate { evaluate(input) { return evaluateGate(input); } }
 class RegressionDetector { detect(input) { return detectRegressions(input); } }
 class DriftDetector { detect(input) { return detectDrift(input); } }
+
+const SUITE_LABEL_ZH = { unit: '单元测试', e2e: '端到端测试', integration: '集成测试' };
 
 export class App {
   constructor({ dataDir = null, dbFile = null, logLevel = null } = {}) {
@@ -178,8 +185,8 @@ export class App {
 
   // ───────────────────────────── Workspace Registry (#10) ─────────────────────────────
 
-  addProject({ workspacePath, name = null, description = '', ignorePatterns = [], demo = false }) {
-    const abs = path.resolve(workspacePath);
+  addProject({ workspacePath, name = null, description = '', ignorePatterns = [], demo = false, category = null }) {
+    const abs = expandShortPath(path.resolve(workspacePath));
     if (!fs.existsSync(abs)) throw new WorkspaceError(`workspace path does not exist: ${abs}`, 'Choose an existing local directory.');
     if (!fs.statSync(abs).isDirectory()) throw new WorkspaceError(`workspace path is not a directory: ${abs}`);
     const existing = this.repo.list('projects', { workspace_path: toPosix(abs) });
@@ -196,8 +203,10 @@ export class App {
       is_demo: !!demo,
       watch_paused: false,
       ignore_patterns: ignorePatterns,
+      category: CATEGORY_KEYS.includes(category) ? category : 'uncategorized',
+      category_manual: CATEGORY_KEYS.includes(category) ? 1 : 0,
       metadata: {},
-      progress: { value: null, percent: null, reason: 'not computed yet' },
+      progress: { value: null, percent: null, reason: '尚未进行任何分析' },
     });
     this.events.record(project.id, EVENT_TYPE.PROJECT_ADDED, `Project added: ${project.name}`, { path: toPosix(abs) });
     if (!project.watch_paused) this.watcher.watch(project);
@@ -214,6 +223,176 @@ export class App {
 
   setIgnorePatterns(projectId, patterns) {
     return this.repo.update('projects', projectId, { ignore_patterns: patterns });
+  }
+
+  /** Manual 分类 wins over inference until the user clears it back to auto. */
+  setCategory(projectId, category) {
+    if (category === null || category === '' || category === 'auto') {
+      return this.repo.update('projects', projectId, { category_manual: 0 });
+    }
+    if (!CATEGORY_KEYS.includes(category)) {
+      throw new WorkspaceError(`unknown category: ${category}`, `可选分类：${CATEGORY_KEYS.join('、')}`);
+    }
+    return this.repo.update('projects', projectId, { category, category_manual: 1 });
+  }
+
+  /** Import + immediate classification, shared by the API and first-run discovery. */
+
+  /**
+   * Import + classify. Publishing runs in the background: a project must appear in the UI
+   * the moment it is added, and a slow or unreachable GitHub must never stall an import —
+   * first-run discovery can queue twenty projects at once.
+   */
+  async addProjectAndClassify(workspacePath, { name = null, description = '', category = null, ignorePatterns = [], awaitPublish = false } = {}) {
+    const project = this.addProject({ workspacePath, name, description, category, ignorePatterns });
+    try { await this.orchestrator.quickScan(project.id); } catch { /* 分类留给后续完整分析 */ }
+    const publish = this.publishToGithub(project.id, { silent: true }).catch(() => null);
+    if (awaitPublish) await publish;
+    return this.getProject(project.id);
+  }
+
+  githubSettings() {
+    return {
+      'github.token': this.repo.getSetting('github.token') || '',
+      'github.enabled': this.repo.getSetting('github.enabled') || '',
+      'github.owner': this.repo.getSetting('github.owner') || '',
+    };
+  }
+
+  /**
+   * Create the user's private repository and push the project to it.
+   *
+   * The token reaches git only through GIT_CONFIG_* env vars, so it never lands in argv,
+   * in the command history, in the database, or in the project's own .git/config.
+   */
+  async publishToGithub(projectId, { silent = false } = {}) {
+    const project = this.getProject(projectId);
+    const settings = this.githubSettings();
+    const token = settings['github.token'];
+    const enabled = settings['github.enabled'] === 'true';
+
+    if (!token || !enabled) {
+      const result = {
+        ok: false,
+        stage: 'disabled',
+        reason: !token ? '未配置 GitHub 令牌，无法自动上传。' : 'GitHub 自动上传已在设置中关闭。',
+        at: nowIso(),
+      };
+      if (!silent) this.#rememberGithub(projectId, result);
+      return result;
+    }
+
+    const { publishProject, gitAuthEnv, validateToken } = await import('./github-publisher.js');
+    // A commit needs an author, and many machines have no global user.name/user.email.
+    // Derive one from the GitHub account instead of failing the import.
+    let owner = settings['github.owner'];
+    if (!owner) {
+      const who = await validateToken({ settings });
+      if (who.ok) {
+        owner = who.username;
+        this.repo.setSetting('github.owner', owner);
+      } else {
+        const blocked = { ok: false, stage: 'no-token', reason: who.reason, at: nowIso() };
+        this.#rememberGithub(projectId, blocked);
+        return blocked;
+      }
+    }
+    const identity = { name: owner, email: `${owner}@users.noreply.github.com` };
+    settings['github.owner'] = owner;
+    const runner = this.runner;
+    const result = await publishProject({
+      project,
+      cwd: project.workspace_path,
+      name: project.name,
+      description: project.description,
+      identity,
+      settings,
+      repo: this.repo,
+      logger: logger.child('github'),
+      // Auth and commit identity live in different env namespaces, so they merge cleanly.
+      // Spreading the request's own env last is what keeps prepareRepository's GIT_AUTHOR_*
+      // vars alive — replacing env outright silently breaks every commit.
+      // Bounded well under the publisher's 120s default: an upload that can't reach
+      // GitHub should report a reason quickly, not occupy the queue for two minutes.
+      timeoutMs: 45000,
+      git: { run: (req) => runner.run({ ...req, env: { ...gitAuthEnv(token), ...(req.env || {}) } }) },
+      files: {
+        async exists(dir, file) { return fs.existsSync(path.join(dir, file)); },
+        async createIfMissing(dir, file, content) {
+          const full = path.join(dir, file);
+          if (fs.existsSync(full)) return { ok: true, created: false };
+          fs.writeFileSync(full, content, 'utf8');
+          return { ok: true, created: true };
+        },
+      },
+    });
+    this.#rememberGithub(projectId, result);
+    return result;
+  }
+
+  #rememberGithub(projectId, result) {
+    const stored = this.repo.get('projects', projectId);
+    if (!stored) return;
+    const meta = stored.metadata || {};
+    // The publisher's result is already token-free; spread it verbatim.
+    this.repo.update('projects', projectId, { metadata: { ...meta, github: { ...result, attemptedAt: nowIso() } } });
+  }
+
+  /** What a source-purging delete *would* remove, with every blocker surfaced. */
+  assessDeletion(projectId) {
+    const project = this.getProject(projectId);
+    const assessed = assessPurgeTarget(project.workspace_path, { ownDataDir: this.dataDir });
+    return {
+      projectId,
+      projectName: project.name,
+      workspacePath: project.workspace_path,
+      recordOnlyIsAlwaysSafe: true,
+      ...assessed,
+      humanSize: formatBytes(assessed.totalBytes || 0),
+    };
+  }
+
+  /**
+   * Delete the Commander record, and optionally wipe the source directory as well.
+   *
+   * ADR-009 keeps the *analysis* pipeline read-only toward workspaces; this is the one
+   * user-initiated exception, so it requires the caller to echo back the folder name.
+   */
+  deleteProject(projectId, { purgeSource = false, confirmToken = null } = {}) {
+    const project = this.getProject(projectId);
+    let purge = null;
+    if (purgeSource) {
+      const assessed = assessPurgeTarget(project.workspace_path, { ownDataDir: this.dataDir });
+      if (!assessed.ok) {
+        throw new WorkspaceError(`拒绝删除源文件：${assessed.reason}`, `路径 ${assessed.display || project.workspace_path}`);
+      }
+      purge = purgeDirectory(assessed, { confirmToken });
+    }
+    const stats = this.deleteProjectRecord(projectId);
+    return { ...stats, sourcePurged: purge };
+  }
+
+  /** 这台电脑上有哪些项目 — walk the search roots and report every project directory. */
+  discover({ roots = null, maxDepth = 3, limit = 300 } = {}) {
+    let configured = roots;
+    if (!configured) {
+      const raw = this.repo.getSetting('workspace.searchRoots');
+      if (raw) {
+        try {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr) && arr.length) configured = arr.map(String).slice(0, 12);
+        } catch { /* fall through to defaults */ }
+      }
+    }
+    const rootsUsed = (configured && configured.length ? configured : defaultRoots()).map((r) => path.resolve(r));
+    const managed = new Set(this.repo.list('projects', {}).map((p) => toPosix(p.workspace_path).toLowerCase()));
+    const result = scanDiskForProjects({
+      roots: rootsUsed,
+      maxDepth: Number(maxDepth) || 3,
+      limit: Number(limit) || 300,
+      isManaged: (abs) => managed.has(toPosix(abs).toLowerCase()),
+    });
+    return { ...result, configuredRoots: rootsUsed.map(toPosix), usingDefaults: !configured || !configured.length };
   }
 
   pauseWatch(projectId) {
@@ -261,6 +440,58 @@ export class App {
     }
     this.repo.remove('projects', projectId);
     return stats;
+  }
+
+  /**
+   * Derive 分类 / 用途 / 建议 for projects scanned before those features existed, using
+   * only the metadata already in the database. Runs at startup so the dashboard is
+   * populated the moment the app opens — no manual re-scan required.
+   */
+  backfillClassification() {
+    let touched = 0;
+    for (const project of this.repo.list('projects', {})) {
+      const meta = project.metadata || {};
+      const scan = meta.metadata;
+      if (!scan || scan.ok !== true || meta.classification) continue;
+      const specs = this.repo.list('specifications', { project_id: project.id });
+      const classification = classifyProject(scan, { manualCategory: project.category_manual ? project.category : null, specs });
+      const runs = ['unit', 'integration', 'e2e'].map((k) => meta.tests && meta.tests[k]).filter(Boolean)
+        .reduce((worst, r) => ((r.failed || 0) > (worst?.failed || 0) ? r : worst), null) || {};
+      const suggestions = buildSuggestions({
+        project,
+        meta: scan,
+        git: meta.git || null,
+        build: meta.build || null,
+        gate: meta.gate || null,
+        health: meta.health || null,
+        drift: meta.drift || null,
+        risks: this.repo.list('risks', { project_id: project.id }),
+        regressions: this.repo.list('regressions', { project_id: project.id }),
+        tasks: this.taskLedger.summary(project.id),
+        specs,
+        prompts: this.repo.list('prompts', { project_id: project.id }),
+        testRuns: {
+          status: runs.status || 'unknown',
+          total: runs.total || 0,
+          failed: runs.failed || 0,
+          command: runs.command || '',
+        },
+      });
+      this.repo.update('projects', project.id, {
+        category: classification.category,
+        category_manual: classification.manual ? 1 : 0,
+        metadata: {
+          ...meta,
+          classification,
+          purpose: identifyPurpose(scan, { specs, project }),
+          suggestions,
+          suggestionSummary: summarizeSuggestions(suggestions),
+          suggestedAt: nowIso(),
+        },
+      });
+      touched += 1;
+    }
+    return touched;
   }
 
   listProjects({ includeArchived = false } = {}) {
@@ -344,12 +575,19 @@ export class App {
       unit: (meta.tests && meta.tests.unit) || null,
       e2e: (meta.tests && meta.tests.e2e) || null,
       integration: (meta.tests && meta.tests.integration) || null,
-      git: meta.git ? { branch: meta.git.branch, head: meta.git.commitShort, clean: meta.git.workingTreeClean, changed: meta.git.changedFileCount, untracked: (meta.git.untracked || []).length } : null,
+      git: meta.git ? { isRepository: meta.git.isRepository, branch: meta.git.branch, head: meta.git.commitShort, clean: meta.git.workingTreeClean, changed: meta.git.changedFileCount, untracked: (meta.git.untracked || []).length } : null,
       gate: meta.gate || null,
       drift: meta.drift ? { verdict: meta.drift.verdict, count: (meta.drift.drifts || []).length } : null,
       lastActivity: this.events.lastActivity(project.id) || project.updated_at,
       lastAnalyzedAt: project.last_analyzed_at,
       nextAction: meta.nextAction || null,
+      category: project.category || 'uncategorized',
+      categoryLabel: categoryLabel(project.category),
+      categoryManual: !!project.category_manual,
+      classification: meta.classification || null,
+      purpose: meta.purpose || null,
+      suggestionSummary: meta.suggestionSummary || null,
+      suggestionCount: (meta.suggestions || []).length,
       taskSummary: { total: tasks.length, done: tasks.filter((t) => t.status === 'done').length, blocked: tasks.filter((t) => t.status === 'blocked').length },
       riskSummary: riskSummary(risks),
       regressionSummary: regressionSummary(regressions),
@@ -362,37 +600,48 @@ export class App {
     const items = [];
     for (const project of this.listProjects()) {
       const card = this.projectCard(project);
+      // When Commander observed this. Each item prefers the timestamp of the record that
+      // triggered it; the analysis time is the honest floor, never a made-up age.
+      const observed = project.last_analyzed_at || card.lastActivity || project.updated_at || null;
+      const health = project.metadata && project.metadata.health;
       if (card.health === PROJECT_HEALTH.CRITICAL) {
-        items.push({ projectId: project.id, projectName: project.name, kind: 'critical_health', severity: 'critical', title: `${project.name} is Critical`, detail: (project.metadata && project.metadata.health && project.metadata.health.reasons || []).slice(0, 2).map((r) => r.message).join(' ') || 'Critical health status.' });
+        items.push({ projectId: project.id, projectName: project.name, kind: 'critical_health', severity: 'critical', at: (health && health.ts) || observed, title: `${project.name} 处于危急状态`, detail: (health && health.reasons || []).slice(0, 2).map((r) => r.message).join(' ') || '健康状态为危急。' });
       }
       if (card.build && (card.build.status === 'fail' || card.build.status === 'timeout')) {
-        items.push({ projectId: project.id, projectName: project.name, kind: 'build_fail', severity: 'critical', title: `${project.name}: build ${card.build.status}`, detail: card.build.command || '' });
+        items.push({ projectId: project.id, projectName: project.name, kind: 'build_fail', severity: 'critical', at: card.build.ts || observed, title: `${project.name}：构建${card.build.status === 'fail' ? '失败' : '超时'}`, detail: card.build.command || '' });
       }
       for (const suite of ['unit', 'e2e', 'integration']) {
         const run = card[suite];
-        if (run && (run.status === 'fail' || run.status === 'error')) {
-          items.push({ projectId: project.id, projectName: project.name, kind: 'test_fail', severity: suite === 'unit' ? 'high' : 'high', title: `${project.name}: ${suite} ${run.failed}/${run.total} failing`, detail: run.command || '' });
+        if (!run) continue;
+        const suiteZh = SUITE_LABEL_ZH[suite] || suite;
+        if (run.status === 'fail' && run.total > 0) {
+          items.push({ projectId: project.id, projectName: project.name, kind: 'test_fail', severity: 'high', at: run.ts || observed, title: `${project.name}：${suiteZh} ${run.failed}/${run.total} 个用例失败`, detail: run.command || '' });
+        } else if (run.status === 'fail' || run.status === 'error') {
+          // The command exited badly without a parseable summary, so no test result is
+          // known. Reporting "0/0 failing" would assert a fact the evidence contradicts.
+          items.push({ projectId: project.id, projectName: project.name, kind: 'test_error', severity: 'medium', at: run.ts || observed, title: `${project.name}：${suiteZh} 执行异常，未能解析出用例结果`, detail: run.command || '' });
         }
       }
       if (card.regressionSummary.count) {
-        items.push({ projectId: project.id, projectName: project.name, kind: 'regression', severity: 'high', title: `${project.name}: ${card.regressionSummary.count} regression(s)`, detail: `worst severity: ${card.regressionSummary.worst}` });
+        items.push({ projectId: project.id, projectName: project.name, kind: 'regression', severity: 'high', at: card.regressionSummary.latestTs || observed, title: `${project.name}：${card.regressionSummary.count} 项回归`, detail: `最严重程度：${card.regressionSummary.worst}` });
       }
       if (card.taskSummary.blocked) {
-        items.push({ projectId: project.id, projectName: project.name, kind: 'blocked_task', severity: 'high', title: `${project.name}: ${card.taskSummary.blocked} blocked task(s)`, detail: '' });
+        items.push({ projectId: project.id, projectName: project.name, kind: 'blocked_task', severity: 'high', at: observed, title: `${project.name}：${card.taskSummary.blocked} 个任务被阻塞`, detail: '' });
       }
       if (card.git && !card.git.clean && (card.git.changed + card.git.untracked) > 25) {
-        items.push({ projectId: project.id, projectName: project.name, kind: 'dirty_workspace', severity: 'medium', title: `${project.name}: ${card.git.changed + card.git.untracked} uncommitted files`, detail: '' });
+        items.push({ projectId: project.id, projectName: project.name, kind: 'dirty_workspace', severity: 'medium', at: observed, title: `${project.name}：${card.git.changed + card.git.untracked} 个文件未提交`, detail: '' });
       }
       const openRisks = card.riskSummary.bySeverity.critical + card.riskSummary.bySeverity.high;
       if (openRisks > 0) {
-        items.push({ projectId: project.id, projectName: project.name, kind: 'risk', severity: card.riskSummary.bySeverity.critical ? 'critical' : 'high', title: `${project.name}: ${openRisks} high/critical risk(s)`, detail: '' });
+        items.push({ projectId: project.id, projectName: project.name, kind: 'risk', severity: card.riskSummary.bySeverity.critical ? 'critical' : 'high', at: card.riskSummary.latestOpenAt || observed, title: `${project.name}：${openRisks} 个高危或危急风险`, detail: '' });
       }
       if (card.drift && card.drift.verdict === 'possible_drift') {
-        items.push({ projectId: project.id, projectName: project.name, kind: 'drift', severity: 'medium', title: `${project.name}: possible spec drift`, detail: `${card.drift.count} signal(s)` });
+        items.push({ projectId: project.id, projectName: project.name, kind: 'drift', severity: 'medium', at: observed, title: `${project.name}：可能存在规范漂移`, detail: `${card.drift.count} 个信号` });
       }
       const pendingReview = this.repo.list('prompts', { project_id: project.id, status: 'generated' });
       if (pendingReview.length) {
-        items.push({ projectId: project.id, projectName: project.name, kind: 'pending_review', severity: 'low', title: `${project.name}: ${pendingReview.length} generated prompt(s) not yet executed`, detail: '' });
+        const newest = pendingReview.map((p) => p.created_at).filter(Boolean).sort().pop();
+        items.push({ projectId: project.id, projectName: project.name, kind: 'pending_review', severity: 'low', at: newest || observed, title: `${project.name}：${pendingReview.length} 条已生成提示词尚未执行`, detail: '' });
       }
     }
     const rank = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -403,12 +652,12 @@ export class App {
     return {
       commandRunner: describeSecurityModel(),
       sensitiveFiles: {
-        policy: 'Contents of sensitive files are never read, stored, logged or sent to any AI provider.',
-        patterns: 'See SENSITIVE_PATTERNS in src/domain/constants.js',
+        policy: '敏感文件的内容绝不会被读取、存储、记录日志或发送给任何 AI 提供方。',
+        patterns: SENSITIVE_PATTERNS.map((p) => ({ pattern: p.pattern, rule: p.rule })),
       },
-      managedWorkspace: 'READ ONLY — Commander has no code path that writes into a managed workspace (ADR-009).',
-      aiDataBoundary: 'Only paths, counts, statistics, short excerpts and failure messages are sent. Secrets are masked before transmission.',
-      secretsStorage: 'API keys are stored in the local SQLite settings table and never returned to the frontend.',
+      managedWorkspace: '只读 —— Commander 没有任何向受管工作区写入的代码路径（ADR-009）。',
+      aiDataBoundary: '仅发送路径、计数、统计、少量片段与失败信息。密钥在发送前会被脱敏。',
+      secretsStorage: 'API 密钥保存在本地 SQLite 的设置表中，绝不会回传给前端。',
     };
   }
 

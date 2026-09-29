@@ -12,8 +12,9 @@ import { App } from '../../src/core/app.js';
 import { buildRouter } from '../../src/server/routes.js';
 import { createHttpServer } from '../../src/server/http-server.js';
 import { createFixtureProject } from '../../src/demo/fixture-factory.js';
+import { makeTempDir } from '../helpers/tmp.js';
 
-const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-api-'));
+const ROOT = makeTempDir('apc-api-');
 let app, server, baseUrl, fixtureDir;
 
 function request(method, p, body) {
@@ -205,13 +206,85 @@ describe('project lifecycle over HTTP', () => {
     assert.ok(read.json.data['ai.apiKey'] !== 'secret-value');
   });
 
-  test('deleting a record requires an explicit safe mode', async () => {
-    const refused = await request('DELETE', `/api/projects/${projectId}`);
+  test('deleting removes the record only unless the source purge is confirmed', async () => {
+    // A throwaway project: deleting the shared fixture here would break later tests.
+    const dir = makeTempDir('apc-ro-');
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'ro', version: '1.0.0' }));
+    const created = await request('POST', '/api/projects', { workspacePath: dir });
+    assert.equal(created.status, 200);
+
+    const recordOnly = await request('DELETE', `/api/projects/${created.json.data.id}`);
+    assert.equal(recordOnly.status, 200);
+    assert.equal(recordOnly.json.data.sourcePurged, null);
+    assert.ok(recordOnly.json.data.sourceDirectoryUntouched);
+    assert.ok(fs.existsSync(dir), 'record-only must not touch the source directory');
+  });
+
+  test('a source purge requires the echoed confirmation token and really deletes', async () => {
+    const dir = makeTempDir('apc-purge-');
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'export const a = 1;\n');
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'purge-me', version: '1.0.0' }));
+
+    const created = await request('POST', '/api/projects', { workspacePath: dir, scan: false });
+    assert.equal(created.status, 200);
+    const id = created.json.data.id;
+
+    const assessed = await request('GET', `/api/projects/${id}/deletion`);
+    assert.equal(assessed.status, 200);
+    assert.equal(assessed.json.data.ok, true);
+    assert.ok(assessed.json.data.fileCount >= 2);
+
+    // Wrong token -> refused, and the directory must survive.
+    const refused = await request('DELETE', `/api/projects/${id}?purge=true&confirm_token=nope`);
     assert.equal(refused.status, 400);
-    assert.match(refused.json.error.message, /绝不会删除源码目录/);
-    const ok = await request('DELETE', `/api/projects/${projectId}?mode=record_only`);
-    assert.equal(ok.status, 200);
-    assert.ok(ok.json.data.sourceDirectoryUntouched);
+    assert.ok(fs.existsSync(dir), 'a refused purge must not delete anything');
+
+    // Correct token -> the folder is really gone.
+    const token = path.basename(dir);
+    const done = await request('DELETE', `/api/projects/${id}?purge=true&confirm_token=${encodeURIComponent(token)}`);
+    assert.equal(done.status, 200);
+    assert.equal(done.json.data.sourcePurged.removed, true);
+    assert.ok(!fs.existsSync(dir), 'the source directory must be removed after a confirmed purge');
+  });
+
+  test('import classifies the project and produces evidence-backed suggestions', async () => {
+    const dir = makeTempDir('apc-classify-');
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+      name: 'my-agent', version: '1.0.0', dependencies: { openai: '^4.0.0' },
+    }, null, 2));
+    fs.writeFileSync(path.join(dir, 'index.js'), [
+      '// TODO: wire the tool loop',
+      '// TODO: stream assistant output',
+      '// TODO: persist the transcript',
+      '// FIXME: retry on 429',
+      '// TODO: add a cancellation path',
+      'export default 1;',
+    ].join('\n'));
+
+    const created = await request('POST', '/api/projects', { workspacePath: dir });
+    assert.equal(created.status, 200);
+    const id = created.json.data.id;
+    assert.equal(created.json.data.category, 'ai-agent', 'AI dependency must classify as 智能体');
+    assert.ok(created.json.data.categoryLabel);
+
+    const sugg = await request('GET', `/api/projects/${id}/suggestions`);
+    assert.equal(sugg.status, 200);
+    const items = sugg.json.data.suggestions;
+    assert.ok(items.length >= 2);
+    assert.ok(items.every((s) => typeof s.evidence === 'string' && s.evidence.length > 0), 'every suggestion must cite evidence');
+    assert.ok(items.some((s) => s.id === 'no-readme'));
+    assert.ok(items.some((s) => s.id === 'todo-debt' || s.title.includes('TODO')));
+  });
+
+  test('discovery reports project directories on this machine', async () => {
+    const res = await request('GET', `/api/discovery?depth=2&limit=50&roots=${encodeURIComponent(path.dirname(fixtureDir))}`);
+    assert.equal(res.status, 200);
+    const data = res.json.data;
+    assert.ok(Array.isArray(data.projects));
+    assert.ok(data.projects.length >= 1, 'the fixture project must be discoverable');
+    assert.ok(data.projects.every((p) => !/node_modules/.test(p.path)));
+    assert.ok(data.projects.some((p) => p.managed === true), 'the registered fixture must be marked managed');
   });
 
   test('unknown routes return a structured 404', async () => {

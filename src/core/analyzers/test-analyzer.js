@@ -64,7 +64,7 @@ export class TestAnalyzer {
     if (res.blocked) status = RUN_STATUS.UNKNOWN;
     else if (res.timedOut) status = RUN_STATUS.TIMEOUT;
     else if (res.executableMissing) status = RUN_STATUS.UNSUPPORTED;
-    else if (res.exitCode === 0 && parsed.failed === 0) status = RUN_STATUS.PASS;
+    else if (res.exitCode === 0 && parsed.failed === 0 && parsed.total > 0) status = RUN_STATUS.PASS;
     else if (parsed.failed > 0 || (parsed.failures && parsed.failures.length > 0)) status = RUN_STATUS.FAIL;
     else if (res.exitCode !== 0 && parsed.total > 0) status = RUN_STATUS.FAIL;
     else if (res.exitCode !== 0) status = RUN_STATUS.ERROR;

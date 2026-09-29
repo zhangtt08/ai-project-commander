@@ -7,7 +7,7 @@ export async function render(query = {}) {
   const input = h('input', {
     class: 'input',
     value: query.q || '',
-    placeholder: 'Search projects, tasks, prompts, risks, decisions…  (press / anywhere)',
+    placeholder: '搜索项目、任务、提示词、风险、决策…（任意界面按 /）',
     'aria-label': 'Search query',
   });
   const submit = () => Router.go(`/search?q=${encodeURIComponent(input.value.trim())}`);
@@ -36,13 +36,13 @@ export async function render(query = {}) {
             h('span', { class: 'chip', text: r.table }),
             h('strong', { class: 'small', text: r.title || r.id }),
           ]),
-          r.projectId ? h('a', { class: 'small', href: `#/projects/${r.projectId}`, text: 'Open project →' }) : null,
+          r.projectId ? h('a', { class: 'small', href: `#/projects/${r.projectId}`, text: '打开项目 →' }) : null,
         ]),
         r.snippet ? h('div', { class: 'small muted', text: r.snippet }) : null,
       ])))
       : stateEmpty('没有匹配结果', '试试更短或更宽泛的关键词。'), {
       hint: data.fts ? 'FTS5 全文索引' : '子串回退',
-      actions: [h('a', { class: 'small', href: '#/projects', text: 'All projects →' })],
+      actions: [h('a', { class: 'small', href: '#/projects', text: '全部项目 →' })],
     }),
   ]), { loadingLabel: '正在搜索…' });
 }

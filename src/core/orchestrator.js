@@ -10,8 +10,29 @@ import {
 import { newId, nowIso, truncate } from './util.js';
 import { logger } from './logger.js';
 import { evSnapshot, evFile } from './evidence.js';
+import { classifyProject, identifyPurpose } from './categories.js';
+import { buildSuggestions, summarizeSuggestions } from './engines/suggestions.js';
 
 const log = logger.child('orchestrator');
+
+const RUN_SEVERITY = ['pass', 'unknown', 'unsupported', 'skipped', 'timeout', 'error', 'fail'];
+
+/** Aggregate the suites into the one signal a suggestion should quote. */
+function pickWorstRun(runs) {
+  const list = (runs || []).filter(Boolean);
+  if (!list.length) return { status: 'unknown', total: 0, failed: 0, passed: 0, command: '', suite: '' };
+  const rank = (r) => RUN_SEVERITY.lastIndexOf(String(r.status || 'unknown'));
+  const worst = list.slice().sort((a, b) => rank(b) - rank(a))[0];
+  return {
+    status: String(worst.status || 'unknown'),
+    suite: worst.suite || '',
+    command: worst.command || '',
+    exitCode: worst.exitCode,
+    total: list.reduce((a, r) => a + (Number(r.total) || 0), 0),
+    passed: list.reduce((a, r) => a + (Number(r.passed) || 0), 0),
+    failed: list.reduce((a, r) => a + (Number(r.failed) || 0), 0),
+  };
+}
 
 export class Orchestrator {
   constructor(deps) {
@@ -42,6 +63,32 @@ export class Orchestrator {
       updated_at: nowIso(),
     };
     const merged = { ...(project.metadata || {}), ...patch, metadata, git };
+    if (metadata.ok) {
+      const classification = classifyProject(metadata, { manualCategory: project.category_manual ? project.category : null });
+      const specs = this.repo.list('specifications', { project_id: projectId });
+      const suggestions = buildSuggestions({
+        project,
+        meta: metadata,
+        git,
+        build: null,
+        gate: null,
+        health: null,
+        drift: null,
+        risks: this.repo.list('risks', { project_id: projectId }),
+        regressions: this.repo.list('regressions', { project_id: projectId }),
+        tasks: this.taskLedger.summary(projectId),
+        specs,
+        prompts: this.repo.list('prompts', { project_id: projectId }),
+        testRuns: {},
+      });
+      merged.classification = classification;
+      merged.purpose = identifyPurpose(metadata, { specs, project });
+      merged.suggestions = suggestions;
+      merged.suggestionSummary = summarizeSuggestions(suggestions);
+      merged.suggestedAt = nowIso();
+      patch.category = classification.category;
+      patch.category_manual = classification.manual ? 1 : 0;
+    }
     this.repo.update('projects', projectId, { ...patch, metadata: merged });
     this.events.record(projectId, EVENT_TYPE.SCAN_COMPLETED, `Quick scan completed (${metadata.fileCount} files)`, { durationMs: metadata.durationMs });
     return { metadata, git };
@@ -287,8 +334,38 @@ export class Orchestrator {
       : null;
     mergedMeta.nextAction = nextAction;
 
+    // 13b. 项目分类 / 用途识别 / 可优化建议 — derived only from the evidence gathered above.
+    //      A category the user set by hand always wins over the inferred one.
+    const classification = classifyProject(metadata, {
+      manualCategory: project.category_manual ? project.category : null,
+      specs: savedSpecs,
+    });
+    const testRuns = pickWorstRun([tests.unit, tests.integration, tests.e2e]);
+    const suggestions = buildSuggestions({
+      project,
+      meta: metadata,
+      git,
+      build,
+      gate,
+      health,
+      drift,
+      risks,
+      regressions: openRegressions,
+      tasks: this.taskLedger.summary(projectId),
+      specs: savedSpecs,
+      prompts: this.repo.list('prompts', { project_id: projectId }),
+      testRuns,
+    });
+    mergedMeta.classification = classification;
+    mergedMeta.purpose = identifyPurpose(metadata, { specs: savedSpecs, project });
+    mergedMeta.suggestions = suggestions;
+    mergedMeta.suggestionSummary = summarizeSuggestions(suggestions);
+    mergedMeta.suggestedAt = nowIso();
+
     this.repo.update('projects', projectId, {
       metadata: mergedMeta,
+      category: classification.category,
+      category_manual: classification.manual ? 1 : 0,
       health: health.status,
       status,
       current_stage_id: currentStage ? currentStage.id : null,
@@ -297,7 +374,7 @@ export class Orchestrator {
       primary_language: metadata.primaryLanguage,
       framework: metadata.framework,
       package_manager: metadata.packageManager,
-      repository_type: git.isRepository ? 'git' : (metadata.isGitRepositoryHardware || 'none'),
+      repository_type: git.isRepository ? 'git' : (metadata.isGitRepositoryHint ? 'git-unavailable' : 'none'),
     });
 
     // 14. Memory version
@@ -369,10 +446,13 @@ export class Orchestrator {
   }
 
   #runSnapshot(run) {
-    if (!run) return { status: 'unknown', total: 0, passed: 0, failed: 0, skipped: 0, framework: 'unknown', confidence: 'unknown' };
+    if (!run) return { status: 'unknown', total: 0, passed: 0, failed: 0, skipped: 0, framework: 'unknown', confidence: 'unknown', ts: null };
     return {
       status: run.status, total: run.total, passed: run.passed, failed: run.failed,
       skipped: run.skipped, framework: run.framework, confidence: run.parseConfidence, command: run.command,
+      // When this run actually happened — the attention list shows per-item ages, and
+      // "when did we observe this" must not be invented.
+      ts: run.ts || run.finishedAt || null,
     };
   }
 

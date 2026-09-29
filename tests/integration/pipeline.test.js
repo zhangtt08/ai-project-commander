@@ -10,9 +10,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { App } from '../../src/core/app.js';
+import { expandShortPath } from '../../src/core/fs-safe.js';
 import { createFixtureProject, applyRegression } from '../../src/demo/fixture-factory.js';
+import { makeTempDir } from '../helpers/tmp.js';
 
-const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-int-'));
+const ROOT = makeTempDir('apc-int-');
 let app;
 
 before(async () => {
@@ -152,7 +154,9 @@ describe('workspace registry safety', () => {
     const before = fs.readdirSync(dir).sort();
     const project = app.addProject({ workspacePath: dir, name: 'Delete me' });
     const stats = app.deleteProjectRecord(project.id);
-    const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
+    // The app canonicalises 8.3 short paths, so compare real directories rather
+    // than raw strings; the readdir assertions below prove the source is untouched.
+    const norm = (p) => String(expandShortPath(p)).replace(/\\/g, '/').replace(/\/$/, '').toLowerCase();
     assert.equal(norm(stats.sourceDirectoryUntouched), norm(path.resolve(dir)));
     assert.throws(() => app.getProject(project.id));
     const after = fs.readdirSync(dir).sort();

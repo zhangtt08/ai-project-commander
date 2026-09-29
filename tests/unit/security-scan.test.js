@@ -8,8 +8,9 @@ import { readWorkspaceText, looksBinary, isInside, resetReadAudit, FILE_READ_AUD
 import { IgnoreEngine, loadGitignore } from '../../src/core/ignore-engine.js';
 import { ProjectScanner } from '../../src/core/scanner.js';
 import { createFixtureProject } from '../../src/demo/fixture-factory.js';
+import { makeTempDir } from '../helpers/tmp.js';
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'apc-unit-'));
+const tmp = () => makeTempDir('apc-unit-');
 
 describe('SensitiveFileDetector', () => {
   test('detects the documented sensitive shapes', () => {

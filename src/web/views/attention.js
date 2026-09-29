@@ -7,10 +7,11 @@ const KIND_LABEL = {
   critical_health: '健康危急',
   build_fail: '构建失败',
   test_fail: '测试失败',
+  test_error: '测试执行异常',
   regression: '回归',
   blocked_task: '任务阻塞',
   dirty_workspace: '工作区脏乱',
-  risk: 'Risk',
+  risk: '风险',
   drift: '规范漂移',
   pending_review: '待复核',
 };
@@ -44,10 +45,11 @@ export async function render() {
           }),
         ]),
         i.detail ? h('div', { class: 'small muted', text: fmt.truncate(i.detail, 260) }) : null,
+        i.at ? h('div', { class: 'small muted alert-time', title: `观察时间 ${fmt.date(i.at)}`, text: `⏱ ${fmt.rel(i.at)}` }) : null,
       ]))),
       { hint: `${g.items.length} 条` },
     )));
-  }, { loadingLabel: 'Collecting attention items…' });
+  }, { loadingLabel: '正在汇总需关注事项…' });
 }
 
 export function attentionBadgeFor(projectId, attention) {

@@ -57,6 +57,17 @@ export const ALLOWLIST = [
     label: 'git read-only inspection',
   },
   {
+    // Git publishing — used ONLY by the explicit "上传到 GitHub" action, never by a scan.
+    // These mutate the workspace's own .git and send data outbound, so they stay out of
+    // AUTO_ALLOWED_SUMMARY: nothing here runs unattended.
+    // The access token is passed through GIT_CONFIG_* env vars, never argv, so it cannot
+    // appear in this record, in the process list, or in .git/config.
+    bin: 'git',
+    args: /^(init|add|commit|push|remote\s+(add|set-url|remove))(\s|$)/i,
+    klass: COMMAND_CLASS.POTENTIALLY_MUTATING,
+    label: 'git publish (user-initiated)',
+  },
+  {
     bin: 'npm',
     args: /^(test|run|run-script|--version|-v|ls|outdated)(\s|$)/i,
     klass: COMMAND_CLASS.VALIDATION,
@@ -177,7 +188,7 @@ export class CommandRunner {
   /**
    * @param {{command:string,args?:string[],cwd:string,timeoutMs?:number,purpose?:string,detachedSafe?:boolean}} req
    */
-  async run({ command, args = [], cwd, timeoutMs, purpose = 'unspecified' }) {
+  async run({ command, args = [], cwd, timeoutMs, purpose = 'unspecified', env = null }) {
     const started = Date.now();
     const verdict = classifyCommand(command, args);
     const base = {
@@ -236,7 +247,7 @@ export class CommandRunner {
           cwd,
           shell: false,
           windowsHide: true,
-          env: { ...process.env, CI: '1', NO_COLOR: '1', FORCE_COLOR: '0' },
+          env: { ...process.env, CI: '1', NO_COLOR: '1', FORCE_COLOR: '0', ...(env || {}) },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
       } catch (err) {

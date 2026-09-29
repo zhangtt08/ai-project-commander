@@ -14,6 +14,7 @@ import { ManualImportAdapter, MockAgentAdapter, parseTranscript, AgentSessionSer
 import { ProjectSummarySchema } from '../../src/domain/ai-schemas.js';
 import { JOB_TYPE, JOB_STATUS, EVENT_TYPE } from '../../src/domain/constants.js';
 import { sleep } from '../../src/core/util.js';
+import { makeTempDir } from '../helpers/tmp.js';
 
 const freshRepo = () => {
   const db = openDatabase(':memory:');
@@ -155,7 +156,7 @@ describe('Database + Repository', () => {
     const first = db.migrate();
     assert.deepEqual(first.applied, []);
     const versions = db.all('SELECT version FROM schema_migrations ORDER BY version').map((r) => Number(r.version));
-    assert.deepEqual(versions, [1, 2, 3]);
+    assert.deepEqual(versions, [1, 2, 3, 4]);
     assert.equal(db.ftsAvailable, true);
   });
 
@@ -269,7 +270,7 @@ describe('WorkspaceWatcher', () => {
     const fs = await import('node:fs');
     const os = await import('node:os');
     const path = await import('node:path');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-watch-'));
+    const dir = makeTempDir('apc-watch-');
     const project = repo.insert('projects', { name: 'W', workspace_path: dir });
     const watcher = new WorkspaceWatcher({ events, debounceMs: 30 });
 
@@ -293,7 +294,7 @@ describe('WorkspaceWatcher', () => {
     const fs = await import('node:fs');
     const os = await import('node:os');
     const path = await import('node:path');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apc-watch2-'));
+    const dir = makeTempDir('apc-watch2-');
     const project = repo.insert('projects', { name: 'W2', workspace_path: dir });
     const watcher = new WorkspaceWatcher({ events, debounceMs: 25 });
     watcher.watch({ id: project.id, workspace_path: dir });

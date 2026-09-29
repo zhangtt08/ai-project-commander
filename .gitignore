@@ -8,3 +8,6 @@ playwright-report/
 .env
 .env.*
 .e2e-artifacts/
+
+# runtime scratch: launcher logs, window captures, pid files
+.run/

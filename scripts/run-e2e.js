@@ -51,6 +51,17 @@ try {
   log('[e2e] seeding demo projects (real builds + tests, ~1 minute)…');
   const seeded = await run(NODE, ['src/server/cli.js', 'seed-demo'], { capture: true, env: { COMMANDER_DATA_DIR: DATA } });
   if (seeded.code !== 0) throw new Error(`seed failed:\n${seeded.out}`);
+  // Guard: seed-demo once built its App without COMMANDER_DATA_DIR and wrote demo projects
+  // into the user's real database. Refuse to continue if the isolation ever breaks again.
+  const usedDir = (String(seeded.out).match(/Data dir:\s*(.+)/) || [])[1];
+  if (!usedDir) throw new Error('seed produced no "Data dir:" line — cannot verify isolation');
+  const norm = (p) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
+  if (norm(usedDir) !== norm(DATA)) {
+    throw new Error(
+      `E2E isolation broken: seed wrote to ${usedDir} but the harness asked for ${DATA}. `
+      + 'Refusing to start — this would pollute a real database.',
+    );
+  }
   log('[e2e] seed complete');
 
   log(`[e2e] starting server on port ${PORT}…`);

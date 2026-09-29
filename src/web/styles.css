@@ -412,3 +412,82 @@ code.inline { font-family: "Cascadia Code", Consolas, ui-monospace, monospace; f
   #nav { flex-direction: row; overflow-x: auto; }
   .nav-group { display: none; }
 }
+
+/* ── 添加项目 / 分类 / 优化建议 ─────────────────────────────────────────── */
+.searchbox { position: relative; display: flex; align-items: center; }
+.topbar-search {
+  width: 280px; padding: 7px 40px 7px 30px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-subtle) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23878E96' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 9px center;
+  color: var(--text); transition: border-color 150ms, box-shadow 150ms, width 180ms;
+}
+.topbar-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); width: 320px; }
+.searchbox kbd {
+  position: absolute; right: 8px; font-size: 10px; font-family: inherit;
+  color: var(--text-3); border: 1px solid var(--border); border-radius: 4px;
+  padding: 1px 5px; background: var(--surface-1); pointer-events: none;
+}
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.tab {
+  padding: 7px 12px; font-size: 13px; border: 0; background: none; cursor: pointer;
+  color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); }
+.tab-active { color: var(--accent-ink); border-bottom-color: var(--accent); font-weight: 550; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.field .input, select.input { width: 100%; }
+.disc-row {
+  display: grid; grid-template-columns: 20px 1fr auto; gap: 10px; align-items: center;
+  padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface-1); cursor: pointer;
+}
+.disc-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.disc-row.is-managed { opacity: .55; cursor: default; }
+.disc-row .chk { width: 15px; height: 15px; accent-color: var(--accent); margin: 0; }
+.disc-main { min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.disc-main .path { flex-basis: 100%; }
+.disc-meta { text-align: right; white-space: nowrap; }
+.chip-ok { background: var(--green-soft); color: var(--green); }
+.sugg-item { border: 1px solid var(--border); border-radius: 10px; padding: 11px 13px; background: var(--surface-1); }
+.sugg-item.impact-critical { border-left: 3px solid var(--red); }
+.sugg-item.impact-high { border-left: 3px solid var(--amber); }
+.sugg-item.impact-medium { border-left: 3px solid var(--blue); }
+.sugg-item.impact-low { border-left: 3px solid var(--text-3); }
+.sugg-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.sugg-why { color: var(--text-2); font-size: 12.5px; margin-top: 4px; }
+.sugg-action { font-size: 12.5px; margin-top: 6px; }
+.sugg-evidence { font-size: 11.5px; color: var(--text-3); margin-top: 6px; font-family: var(--mono, ui-monospace, monospace); }
+.purpose-box { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--bg-subtle); }
+.danger-note { border: 1px solid var(--red); background: var(--red-soft); color: var(--red); border-radius: 9px; padding: 10px 12px; font-size: 12.5px; }
+.chip-btn { cursor: pointer; border: 1px solid var(--border); background: var(--surface-1); color: var(--text-2); font: inherit; font-size: 12px; }
+.chip-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.chip-on { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); color: var(--accent-ink); font-weight: 550; }
+.group-head { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; font-size: 12.5px; }
+.input-sm { padding: 6px 9px; font-size: 12.5px; max-width: 340px; }
+
+/* 需要立即关注：参考图的圆形 severity 图标 + 右侧箭头 */
+.risk-item.alert-row {
+  display: grid; grid-template-columns: 26px 1fr auto auto; gap: 11px;
+  align-items: center; border: 0; border-left: 0; padding: 12px 14px;
+  background: var(--surface-1); border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+.risk-item.alert-row:last-child { border-bottom: 0; }
+.sev-dot {
+  width: 26px; height: 26px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 13px; line-height: 1;
+}
+.dot-critical { background: var(--red-soft); color: var(--red); }
+.dot-high { background: var(--amber-soft); color: var(--amber); }
+.dot-medium { background: var(--blue-soft); color: var(--blue); }
+.dot-low { background: var(--green-soft); color: var(--green); }
+.alert-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.alert-body strong { overflow: hidden; text-overflow: ellipsis; }
+.alert-go {
+  width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-2); text-decoration: none; font-size: 15px; background: var(--surface-1);
+}
+.alert-go:hover { border-color: var(--border-strong); color: var(--text); }
+
+.alert-time { font-size: 11.5px; display: flex; align-items: center; gap: 4px; }
