@@ -11,3 +11,7 @@ playwright-report/
 
 # runtime scratch: launcher logs, window captures, pid files
 .run/
+
+# python bytecode from the e2e runner
+__pycache__/
+*.pyc

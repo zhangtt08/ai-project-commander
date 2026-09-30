@@ -12,7 +12,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import http from 'node:http';
 import { App } from '../../src/core/app.js';
+import { buildRouter } from '../../src/server/routes.js';
+import { createHttpServer } from '../../src/server/http-server.js';
 import { makeTempDir } from '../helpers/tmp.js';
 
 const TOKEN = 'ghp_SECRETISH_1234567890abcdef';
@@ -194,4 +197,50 @@ describe('App.publishToGithub wiring', () => {
     assert.equal(stored.metadata.github.ok, false);
   });
 
+});
+
+/**
+ * The project page renders the publish outcome, so the HTTP envelope is part of the contract:
+ * the UI reads `data.result.{ok,stage,reason,htmlUrl}`, and a rename of any of those silently
+ * turns the button's feedback into "未上传：undefined".
+ */
+describe('publish over HTTP', () => {
+  function request(baseUrl, method, p, body) {
+    return new Promise((resolve, reject) => {
+      const req = http.request(`${baseUrl}${p}`, { method, headers: { 'content-type': 'application/json' } }, (res) => {
+        let text = '';
+        res.on('data', (c) => { text += c; });
+        res.on('end', () => {
+          let json = null;
+          try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text }; }
+          resolve({ status: res.statusCode, json, text });
+        });
+      });
+      req.on('error', reject);
+      if (body !== undefined) req.write(body);
+      req.end();
+    });
+  }
+
+  test('POST /api/projects/:id/github/publish returns { result, project }', async () => {
+    const { app, projDir } = setup();
+    const p = app.addProject({ workspacePath: projDir });
+    const server = createHttpServer({ router: buildRouter(app), app });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const url = `http://127.0.0.1:${server.address().port}`;
+      const res = await request(url, 'POST', `/api/projects/${p.id}/github/publish`, '{}');
+      assert.equal(res.status, 200, `body: ${res.text}`);
+      assert.equal(res.json.data.result.ok, false);
+      assert.equal(res.json.data.result.stage, 'disabled');
+      assert.ok(res.json.data.result.reason.length > 0, 'a reason the UI can show verbatim');
+      assert.equal(res.json.data.project.id, p.id);
+      const detail = await request(url, 'GET', `/api/projects/${p.id}/detail`);
+      assert.equal(detail.status, 200, `body: ${detail.text}`);
+      assert.equal(detail.json.data.github.stage, 'disabled');
+      assert.equal(detail.json.data.github.reason, res.json.data.result.reason);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
 });

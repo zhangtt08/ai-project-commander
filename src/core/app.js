@@ -187,10 +187,10 @@ export class App {
 
   addProject({ workspacePath, name = null, description = '', ignorePatterns = [], demo = false, category = null }) {
     const abs = expandShortPath(path.resolve(workspacePath));
-    if (!fs.existsSync(abs)) throw new WorkspaceError(`workspace path does not exist: ${abs}`, 'Choose an existing local directory.');
-    if (!fs.statSync(abs).isDirectory()) throw new WorkspaceError(`workspace path is not a directory: ${abs}`);
+    if (!fs.existsSync(abs)) throw new WorkspaceError(`workspace path does not exist: ${abs}`, '请选择一个当前存在的本地目录。');
+    if (!fs.statSync(abs).isDirectory()) throw new WorkspaceError(`workspace path is not a directory: ${abs}`, '路径指向的是文件，需要选择一个文件夹。');
     const existing = this.repo.list('projects', { workspace_path: toPosix(abs) });
-    if (existing.length) throw new ConflictError(`this workspace is already registered`, `Project "${existing[0].name}" already points at ${abs}.`);
+    if (existing.length) throw new ConflictError(`this workspace is already registered`, `「${existing[0].name}」已经管理了 ${abs}。`);
 
     const project = this.repo.insert('projects', {
       id: newId('prj'),
@@ -236,10 +236,36 @@ export class App {
     return this.repo.update('projects', projectId, { category, category_manual: 1 });
   }
 
-  /** Import + immediate classification, shared by the API and first-run discovery. */
-
   /**
-   * Import + classify. Publishing runs in the background: a project must appear in the UI
+   * Repoint a project after its folder moved or was restored elsewhere. Verdicts Commander had
+   * cached about the old location are cleared together with the path — keeping them would present
+   * conclusions about a directory this record no longer points at.
+   */
+  setWorkspacePath(projectId, rawPath) {
+    const next = expandShortPath(path.resolve(String(rawPath || '').trim()));
+    if (!fs.existsSync(next)) throw new WorkspaceError(`目录不存在，无法指向它：${next}`, '项目移动后请填写新的位置；如果不再需要，可以直接删除这条记录。');
+    if (!fs.statSync(next).isDirectory()) throw new WorkspaceError(`路径指向的是文件，不是目录：${next}`, '请选择一个文件夹。');
+    const clash = this.repo.list('projects', {}).find((p) => p.id !== projectId && toPosix(p.workspace_path) === toPosix(next));
+    if (clash) throw new ConflictError(`这个目录已经由「${clash.name}」管理：${next}`, '请先删除重复的那条记录，或换一个位置。');
+
+    const before = this.getProject(projectId);
+    this.watcher.unwatch(projectId);
+    const updated = this.repo.update('projects', projectId, {
+      workspace_path: toPosix(next),
+      repository_type: fs.existsSync(path.join(next, '.git')) ? 'git' : 'unknown',
+      health: PROJECT_HEALTH.UNKNOWN,
+      // An inferred category describes the old folder's contents; a manual one is the user's.
+      category: before.category_manual ? before.category : 'uncategorized',
+      metadata: {},
+      progress: { value: null, percent: null, reason: '路径已更新，尚未重新分析' },
+      last_analyzed_at: null,
+    });
+    this.events.record(projectId, EVENT_TYPE.WORKSPACE_CHANGED, `Workspace path relinked to ${next}`, { from: before.workspace_path, to: toPosix(next) });
+    if (!updated.watch_paused) this.watcher.watch(updated);
+    return updated;
+  }
+
+  /** Import + classify. Publishing runs in the background: a project must appear in the UI
    * the moment it is added, and a slow or unreachable GitHub must never stall an import —
    * first-run discovery can queue twenty projects at once.
    */
@@ -573,7 +599,8 @@ export class App {
       workspacePath: project.workspace_path,
       description: project.description,
       status: project.status,
-      health: project.health,
+      // A colour computed from files we can no longer read is not a current verdict.
+      health: view.workspaceMissing ? PROJECT_HEALTH.UNKNOWN : project.health,
       isDemo: !!project.is_demo,
       watchPaused: !!project.watch_paused,
       currentStage: (meta.stages && meta.stages.current) || meta.currentStageName || (this.repo.get('stages', project.current_stage_id || '') || {}).name || null,
@@ -635,7 +662,7 @@ export class App {
         id: 'workspace-missing',
         title: '项目目录已不存在，无法给出当前的优化建议',
         why: `Commander 只根据真实读到的文件下结论。${project.workspace_path} 现在不在磁盘上，之前缓存的 ${base.suggestions.length} 条建议描述的是 ${project.last_analyzed_at || '未知时间'} 的状态，继续展示会误导。`,
-        action: '如果项目只是移动了位置，请在「整理」里改成新路径后重新分析；如果已经不需要了，可以直接删除这条记录。',
+        action: '如果项目只是移动了位置，请在项目详情页的「设置」标签里改成新路径后重新分析；如果已经不需要了，可以直接删除这条记录。',
         evidence: `workspace_path=${project.workspace_path} 不存在；上次分析时间 ${project.last_analyzed_at || '无记录'}`,
         impact: 'high', effort: 'low', area: '整理',
       }],

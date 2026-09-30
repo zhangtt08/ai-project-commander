@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { h, card, table, mountAsync, healthBadge, statusBadge, gateBadge, toast, modal, projectStatusLabel } from '../ui.js';
+import { h, card, table, mountAsync, healthBadge, statusBadge, gateBadge, toast, modal, projectStatusLabel, sameLocalPath, errorText } from '../ui.js';
 import { setTopbar, refreshShellData, state } from '../app.js';
 import { Router } from '../router.js';
 import { renderImportPanel } from './dropzone.js';
@@ -114,7 +114,7 @@ function projectTable(cards) {
   return table([
     { label: '项目', render: (r) => h('div', {}, [h('a', { href: `#/projects/${r.id}`, text: r.name }), r.isDemo ? h('span', { class: 'chip', style: { marginLeft: '6px' }, text: '演示' }) : null, h('div', { class: 'path', text: r.workspacePath })]) },
     { label: '分类', render: (r) => h('span', { class: 'chip', title: r.categoryManual ? '手动指定' : '自动识别', text: r.categoryLabel || '未分类' }) },
-    { label: '健康', render: (r) => healthBadge(r.health) },
+    { label: '健康', render: (r) => (r.workspaceMissing ? h('span', { class: 'badge badge-critical', title: r.workspacePath, text: '目录已丢失' }) : healthBadge(r.health)) },
     { label: '状态', render: (r) => h('span', { class: 'chip', text: projectStatusLabel(r.status) }) },
     { label: '阶段', render: (r) => r.currentStage || '—' },
     { label: '进度', render: (r) => (r.progress && r.progress.percent !== null ? `${r.progress.percent}%` : '未知'), num: true },
@@ -188,6 +188,10 @@ export function openAddDialog() {
 
 export async function openProjectSettings(cardData) {
   const nameInput = h('input', { class: 'input', value: cardData.name, 'aria-label': 'Display name' });
+  const pathInput = h('input', { class: 'input', value: cardData.workspacePath, 'aria-label': '工作区路径' });
+  const pathHint = h('div', { class: cardData.workspaceMissing ? 'danger-note' : 'small muted', text: cardData.workspaceMissing
+    ? '目录已不存在 —— 项目移动后把上面的路径改成新位置，保存会清空旧结论并重新分析。'
+    : '项目移动到别处时在这里改路径；新目录必须已经存在。' });
   const descInput = h('textarea', { class: 'textarea', rows: '3', value: cardData.description || '', 'aria-label': 'Description' });
   const cats = (state.meta && state.meta.categories) || [];
   const catSelect = h('select', { class: 'input', 'aria-label': '项目分类' }, [
@@ -196,7 +200,7 @@ export async function openProjectSettings(cardData) {
       value: c.key, text: c.label, selected: c.key === cardData.category && !!cardData.categoryManual,
     })),
   ]);
-  const confirmInput = h('input', { class: 'input', placeholder: '输入 DELETE 以确认', 'aria-label': '删除确认' });
+  const confirmInput = h('input', { class: 'input', placeholder: '输入 DELETE 以确认（只删除记录）', 'aria-label': '删除确认' });
   const status = h('div', { class: 'small muted' });
   let purgeSource = false;
   let assessment = null;
@@ -211,6 +215,13 @@ export async function openProjectSettings(cardData) {
       assessBox.textContent = assessment.ok
         ? `源目录：${assessment.display} · ${assessment.fileCount} 个文件 · ${assessment.humanSize}${assessment.truncatedStats ? '（统计已达上限）' : ''}`
         : `源目录不可删除：${assessment.reason}`;
+      // The server's token is the real folder name, which is not the display name — it asks for
+      // whatever actually unlocks the delete.
+      if (purgeSource) {
+        confirmInput.placeholder = assessment.ok
+          ? `输入「${assessment.confirmToken}」以确认彻底删除`
+          : '当前源目录不允许彻底删除';
+      }
     } catch (err) {
       assessment = null;
       assessBox.textContent = `无法评估源目录：${err.message}`;
@@ -218,6 +229,7 @@ export async function openProjectSettings(cardData) {
   };
 
   const dlg = modal(`项目整理 — ${cardData.name}`, h('div', { class: 'stack' }, [
+    h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '工作区路径（绝对路径）' }), pathInput, pathHint]),
     h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '显示名称' }), nameInput]),
     h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '描述' }), descInput]),
     h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '项目分类' }), catSelect]),
@@ -227,16 +239,24 @@ export async function openProjectSettings(cardData) {
         text: '保存',
         onClick: async () => {
           try {
-            await api.updateProject(cardData.id, {
+            const nextPath = pathInput.value.trim();
+            const patch = {
               name: nameInput.value.trim(),
               description: descInput.value.trim(),
               category: catSelect.value,
-            });
-            toast('项目已更新', 'ok');
+            };
+            if (nextPath && !sameLocalPath(nextPath, cardData.workspacePath)) patch.workspacePath = nextPath;
+            await api.updateProject(cardData.id, patch);
+            if (patch.workspacePath) {
+              toast('路径已更新，旧的结论已清空——正在重新分析…', 'info', 6000);
+              try { await api.scan(cardData.id, { mode: 'quick' }); } catch { /* 下次扫描会补上 */ }
+            } else {
+              toast('项目已更新', 'ok');
+            }
             dlg.close();
             await refreshShellData();
             render();
-          } catch (err) { toast(err.message, 'error'); }
+          } catch (err) { toast(errorText(err), 'error'); }
         },
       }),
       h('button', {
@@ -269,6 +289,10 @@ export async function openProjectSettings(cardData) {
           onChange: (e) => {
             purgeSource = e.target.checked;
             purgeWarning.style.display = purgeSource ? '' : 'none';
+            // The token differs by mode — DELETE for a record-only delete, the project name for
+            // a purge — so the placeholder must state the one that actually works.
+            confirmInput.placeholder = purgeSource ? '正在读取源目录的确认口令…' : '输入 DELETE 以确认（只删除记录）';
+            confirmInput.value = '';
             if (purgeSource && !assessment) loadAssessment();
           },
         }),
@@ -284,13 +308,17 @@ export async function openProjectSettings(cardData) {
         onClick: async () => {
           const typed = confirmInput.value.trim();
           if (!purgeSource && typed !== 'DELETE') { status.textContent = '请输入 DELETE 以确认。'; return; }
-          if (purgeSource && typed !== cardData.name) {
-            status.textContent = `彻底删除需要输入项目名「${cardData.name}」以确认。`;
-            return;
+          if (purgeSource) {
+            const token = assessment && assessment.confirmToken;
+            if (!token) { status.textContent = assessment && assessment.reason ? `不能清除源目录：${assessment.reason}` : '源目录信息还在载入，请稍候再点删除。'; return; }
+            if (typed !== token) {
+              status.textContent = `彻底删除需要输入「${token}」—— 这是磁盘上真实的目录名。`;
+              return;
+            }
           }
           try {
             const res = purgeSource
-              ? await api.deleteProjectWithSource(cardData.id, cardData.name)
+              ? await api.deleteProjectWithSource(cardData.id, assessment.confirmToken)
               : await api.deleteProject(cardData.id);
             if (purgeSource) {
               toast(`已删除记录并清除源文件：${res.sourcePurged.path}（${res.sourcePurged.fileCount} 个文件）`, 'ok', 9000);

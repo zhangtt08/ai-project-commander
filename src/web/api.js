@@ -50,6 +50,8 @@ export const api = {
   deleteProjectWithSource: (id, confirmToken) => request('DELETE', `/api/projects/${id}?purge=true&confirm_token=${encodeURIComponent(confirmToken)}`),
   suggestions: (id) => request('GET', `/api/projects/${id}/suggestions`),
   publishGithub: (id) => request('POST', `/api/projects/${id}/github/publish`),
+  remoteRepos: (q = '') => request('GET', `/api/github/remote/repos?q=${encodeURIComponent(q)}`),
+  remoteRepo: (name) => request('GET', `/api/github/remote/repo?name=${encodeURIComponent(name)}`),
   archiveProject: (id) => request('POST', `/api/projects/${id}/archive`),
   unarchiveProject: (id) => request('POST', `/api/projects/${id}/unarchive`),
   pauseWatch: (id) => request('POST', `/api/projects/${id}/pause-watch`),

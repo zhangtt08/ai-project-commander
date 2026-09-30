@@ -293,6 +293,10 @@ def delete_preview(page):
     expect(page.locator(".modal")).to_contain_text("同时删除电脑上的项目源文件", timeout=5000)
     # record-only is the default, and the dialog says so
     expect(page.locator(".modal")).to_contain_text("源码目录保持不变", timeout=5000)
+    # the dialog is also where a moved folder gets re-pointed, so the path is editable and filled
+    path_field = page.locator(".modal input[aria-label='工作区路径']")
+    expect(path_field).to_be_visible(timeout=5000)
+    assert path_field.input_value().strip(), "the workspace path field must be prefilled"
     # ticking the destructive option must surface the assessment and a warning
     page.locator(".modal input[type=checkbox]").first.check()
     expect(page.locator(".modal .danger-note")).to_be_visible(timeout=10000)
@@ -303,11 +307,16 @@ def delete_preview(page):
     assess = page.locator(".modal").inner_text()
     assert ("个文件" in assess) or ("拒绝删除" in assess) or ("不可删除" in assess), \
         "the assessment must report a size or a refusal reason"
-    # and a purge refuses to run without the project name typed back
-    page.fill(".modal input[aria-label='删除确认']", "not-the-name")
+    # The prompt states the token that actually unlocks a purge: the real directory name, which
+    # is not the display name and not a fixed word. Silence or a stale hint is the bug.
+    placeholder = page.locator(".modal input[aria-label='删除确认']").get_attribute("placeholder") or ""
+    assert ("输入「" in placeholder) or ("不允许彻底删除" in placeholder) or ("载入" in placeholder), \
+        f"purge prompt must come from the assessment, got: {placeholder}"
+    # and a purge refuses to run without that token typed back
+    page.fill(".modal input[aria-label='删除确认']", "not-the-token")
     page.locator(".modal button:has-text('删除')").click()
     page.wait_for_selector(".modal", timeout=5000)  # still open -> refused
-    expect(page.locator(".modal")).to_contain_text("彻底删除需要输入项目名", timeout=5000)
+    expect(page.locator(".modal")).to_contain_text("彻底删除需要输入", timeout=5000)
     page.locator(".modal .btn-ghost").first.click()
     expect(page.locator(".modal")).to_have_count(0, timeout=5000)
     # nothing was deleted

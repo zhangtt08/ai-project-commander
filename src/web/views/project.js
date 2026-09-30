@@ -2,28 +2,45 @@ import { api } from '../api.js';
 import {
   h, card, table, metric, mountAsync, stateEmpty, stateLoading, healthBadge, statusBadge, gateBadge,
   progressBar, evidenceList, fmt, toast, modal, copyButton, mockBadge,
-  suiteResult, healthLabel, runStatusLabel, projectStatusLabel, enumLabel,
+  suiteResult, healthLabel, runStatusLabel, projectStatusLabel, enumLabel, sameLocalPath, errorText,
 } from '../ui.js';
 import { setTopbar, refreshShellData, state } from '../app.js';
 import { Router } from '../router.js';
 
-const TABS = [
-  'overview', 'suggestions', 'stages', 'tasks', 'tests', 'build', 'git', 'changes',
-  'prompts', 'sessions', 'risks', 'memory', 'decisions', 'timeline', 'settings',
-];
-
-const SUITE_ZH = { unit: '单元测试', integration: '集成测试', e2e: '端到端测试' };
+/**
+ * Five tabs instead of fifteen. The panels did not change — they are grouped by what a person
+ * actually comes to decide, so one tab reads as a page rather than as another unlabelled door.
+ */
+const TABS = ['overview', 'work', 'quality', 'ai', 'settings'];
 
 const TAB_LABEL = {
-  overview: '概述', suggestions: '优化建议', stages: '阶段', tasks: '任务', tests: '测试', build: '构建',
-  git: 'Git', changes: '变更', prompts: '提示词', sessions: 'Agent 会话',
-  risks: '风险', memory: '记忆', decisions: '决策', timeline: '时间线', settings: '设置',
+  overview: '概况', work: '任务与阶段', quality: '质量与验证', ai: 'AI 记录', settings: '设置',
 };
+
+const PANELS = {
+  overview: ['overview', 'suggestions'],
+  work: ['stages', 'tasks'],
+  quality: ['tests', 'build', 'git', 'changes', 'risks'],
+  ai: ['prompts', 'sessions', 'memory', 'decisions'],
+  settings: ['timeline', 'settings'],
+};
+
+/** Old deep links and bookmarks still resolve to the group that now holds the panel. */
+const LEGACY_TAB = {
+  suggestions: 'overview',
+  stages: 'work', tasks: 'work',
+  tests: 'quality', build: 'quality', git: 'quality', changes: 'quality', risks: 'quality',
+  prompts: 'ai', sessions: 'ai', memory: 'ai', decisions: 'ai',
+  timeline: 'settings',
+};
+
+const SUITE_ZH = { unit: '单元测试', integration: '集成测试', e2e: '端到端测试' };
 
 let current = { id: null, tab: 'overview', card: null };
 
 export async function render(projectId, tab = 'overview') {
-  const activeTab = TABS.includes(tab) ? tab : 'overview';
+  const requested = LEGACY_TAB[tab] || tab;
+  const activeTab = TABS.includes(requested) ? requested : 'overview';
   current = { id: projectId, tab: activeTab, card: null };
 
   const view = document.getElementById('view');
@@ -43,12 +60,14 @@ export async function render(projectId, tab = 'overview') {
   current.card = cardData;
 
   setTopbar(cardData.name, `${cardData.workspacePath} · ${cardData.primaryLanguage} / ${cardData.framework}`, [
-    h('button', { class: 'btn', text: '快速扫描', onClick: () => runScan('quick') }),
-    h('button', { class: 'btn', text: '全量扫描', onClick: () => runScan('full') }),
-    h('button', { class: 'btn', text: '生成提示词', onClick: () => generatePrompt(cardData) }),
-    h('button', { class: 'btn', text: '交接包', onClick: () => showHandoff(cardData) }),
-    h('button', { class: 'btn btn-ghost', text: '全部项目', onClick: () => Router.go('/projects') }),
-    h('button', { class: 'btn btn-danger', text: '删除', onClick: () => confirmDelete(cardData) }),
+    // One action here. Quick scan, prompts, handoff, archive and delete all already live inside
+    // the tabs where their result is read, and six buttons in a row told nobody where to start.
+    h('button', {
+      class: 'btn btn-primary',
+      text: '重新分析',
+      title: '重新读取这个目录：扫描文件、跑构建与测试、更新识别与建议',
+      onClick: () => runScan('full'),
+    }),
   ]);
 
   const tabsBar = h('div', { class: 'tabs', role: 'tablist' }, TABS.map((t) => h('button', {
@@ -61,31 +80,42 @@ export async function render(projectId, tab = 'overview') {
 
   const container = h('div', { class: 'stack' });
   const missingBanner = cardData.workspaceMissing
-    ? h('div', { class: 'danger-note', text: `项目目录已不存在：${cardData.workspacePath} —— 本页各标签的内容来自最后一次成功分析（${fmt.date(cardData.lastAnalyzedAt)}），不代表磁盘现状。请在「整理」中修正路径后重新分析，或删除这条记录。` })
+    ? h('div', { class: 'danger-note', text: `项目目录已不存在：${cardData.workspacePath} —— 本页各标签的内容来自最后一次成功分析（${fmt.date(cardData.lastAnalyzedAt)}），不代表磁盘现状。请在「设置」标签中把路径改成新位置，或直接删除这条记录。` })
     : null;
   view.replaceChildren(...[missingBanner, tabsBar, container].filter(Boolean));
 
   // 若该项目有排队/运行中的任务，完成后自动刷新界面（拖拽导入后的首次扫描即属此类）。
   scheduleScanRefresh(projectId);
 
-  const loaders = {
-    overview: () => renderOverview(container, projectId),
-    suggestions: () => renderSuggestions(container, projectId),
-    stages: () => renderStages(container, projectId),
-    tasks: () => renderTasks(container, projectId),
-    tests: () => renderTests(container, projectId),
-    build: () => renderBuild(container, projectId),
-    git: () => renderGit(container, projectId),
-    changes: () => renderChanges(container, projectId),
-    prompts: () => renderPrompts(container, projectId),
-    sessions: () => renderSessions(container, projectId),
-    risks: () => renderRisks(container, projectId),
-    memory: () => renderMemory(container, projectId),
-    decisions: () => renderDecisions(container, projectId),
-    timeline: () => renderTimeline(container, projectId),
-    settings: () => renderSettings(container, cardData),
+  const panelFor = {
+    overview: (box) => renderOverview(box, projectId),
+    suggestions: (box) => renderSuggestions(box, projectId),
+    stages: (box) => renderStages(box, projectId),
+    tasks: (box) => renderTasks(box, projectId),
+    tests: (box) => renderTests(box, projectId),
+    build: (box) => renderBuild(box, projectId),
+    git: (box) => renderGit(box, projectId),
+    changes: (box) => renderChanges(box, projectId),
+    risks: (box) => renderRisks(box, projectId),
+    prompts: (box) => renderPrompts(box, projectId),
+    sessions: (box) => renderSessions(box, projectId),
+    memory: (box) => renderMemory(box, projectId),
+    decisions: (box) => renderDecisions(box, projectId),
+    timeline: (box) => renderTimeline(box, projectId),
+    settings: (box) => renderSettings(box, cardData),
   };
-  await loaders[activeTab]();
+  if (activeTab === 'ai') {
+    container.appendChild(h('div', { class: 'row wrap' }, [
+      h('button', { class: 'btn btn-sm', text: '生成提示词', onClick: () => generatePrompt(cardData) }),
+      h('button', { class: 'btn btn-sm', text: '交接包', onClick: () => showHandoff(cardData) }),
+      h('span', { class: 'small muted', text: '两者只读已采集的证据，不改动项目文件。' }),
+    ]));
+  }
+  for (const name of PANELS[activeTab]) {
+    const box = h('div', { class: 'stack' });
+    container.appendChild(box);
+    await panelFor[name](box);
+  }
 }
 
 function scheduleScanRefresh(projectId) {
@@ -128,11 +158,52 @@ async function runScan(mode) {
       } catch { clearInterval(poll); }
     }, 3000);
   } catch (err) {
-    toast(`扫描失败：${err.message}`, 'error');
+    toast(`扫描失败：${errorText(err)}`, 'error');
   }
 }
 
 // ───────────────────────────── Overview ─────────────────────────────
+
+/**
+ * GitHub 私有仓库自动上传：状态、原因，以及没配令牌时可以执行的下一步。
+ * A headline feature that silently does nothing reads as missing, so its state is always stated.
+ */
+function githubCard(d) {
+  const g = d.github;
+  const run = h('button', {
+    class: 'btn btn-sm',
+    text: g && g.stage === 'pushed' ? '重新上传' : '立即上传',
+    onClick: async () => {
+      run.disabled = true;
+      run.textContent = '正在建私有仓库并推送…';
+      try {
+        const res = await api.publishGithub(d.projectId);
+        const result = (res && res.result) || {};
+        toast(result.ok ? `已上传到 ${result.htmlUrl || result.fullName || '私有仓库'}` : `未上传：${result.reason || result.stage || '未知原因'}`, result.ok ? 'ok' : 'warn', 9000);
+      } catch (err) {
+        toast(errorText(err), 'error');
+      } finally {
+        Router.reload();
+      }
+    },
+  });
+  const STATE = { pushed: ['badge-pass', '已上传'], disabled: ['badge-unknown', '未开启'], no_token: ['badge-warning', '缺少令牌'], failed: ['badge-critical', '上传失败'], pending: ['badge-unknown', '排队中'] };
+  const [cls, label] = STATE[(g && g.stage) || ''] || ['badge-unknown', '未尝试'];
+  return card('GitHub 私有仓库自动上传', h('div', { class: 'stack-sm' }, [
+    h('div', { class: 'row wrap' }, [
+      h('span', { class: `badge ${cls}`, text: label }),
+      g && g.htmlUrl ? h('a', { class: 'small', href: g.htmlUrl, target: '_blank', rel: 'noreferrer', text: g.fullName || g.htmlUrl }) : null,
+      g && g.at ? h('span', { class: 'small muted', text: `时间 ${fmt.date(g.at)}` }) : null,
+    ]),
+    g && g.reason
+      ? h('div', { class: 'small', text: g.reason })
+      : h('div', { class: 'small muted', text: '还没有为这个项目尝试过上传。上传会新建一个只属于账号的私有仓库，并把当前工作区推送上去；令牌只在设置里保存，不会写进项目目录。' }),
+    h('div', { class: 'row wrap' }, [
+      run,
+      h('a', { class: 'small', href: '#/settings', text: '设置 → GitHub 私有仓库自动上传' }),
+    ]),
+  ]), { hint: g && g.stage === 'pushed' ? '仓库为非公开（private）' : '未配置令牌时不会有任何网络写入' });
+}
 
 async function renderOverview(container, id) {
   await mountAsync(container, () => api.projectDetail(id), (d) => {
@@ -152,6 +223,8 @@ async function renderOverview(container, id) {
         metric('风险', `${d.riskSummary.bySeverity.critical} 危急 / ${d.riskSummary.bySeverity.high} 高`, { cls: d.riskSummary.bySeverity.critical ? 'alert' : d.riskSummary.bySeverity.high ? 'warn' : '', foot: `最重：${enumLabel(d.riskSummary.worst) || '无'}` }),
         metric('回归', String(d.regressionSummary.count), { cls: d.regressionSummary.count ? 'alert' : 'ok', foot: enumLabel(d.regressionSummary.worst) || '无' }),
       ]),
+
+      githubCard(d),
 
       h('div', { class: 'grid grid-2' }, [
         card('进度', h('div', { class: 'stack-sm' }, [
@@ -781,12 +854,20 @@ async function renderTimeline(container, id) {
 
 async function renderSettings(container, cardData) {
   const nameInput = h('input', { class: 'input', value: cardData.name, 'aria-label': '名称' });
+  const pathInput = h('input', { class: 'input', value: cardData.workspacePath, 'aria-label': '工作区路径' });
   const descInput = h('textarea', { class: 'textarea', rows: '3', value: cardData.description || '', 'aria-label': '描述' });
   const ignoreInput = h('input', { class: 'input', placeholder: '以逗号分隔', 'aria-label': '忽略规则' });
   const confirmInput = h('input', { class: 'input', placeholder: '输入 DELETE', 'aria-label': '删除确认' });
 
   container.replaceChildren(h('div', { class: 'stack' }, [
     card('项目', h('div', { class: 'stack' }, [
+      h('div', { class: 'stack-sm' }, [
+        h('label', { class: 'small muted', text: '工作区路径（绝对路径）' }),
+        pathInput,
+        h('div', { class: cardData.workspaceMissing ? 'danger-note' : 'small muted', text: cardData.workspaceMissing
+          ? '目录已不存在 —— 改成项目的新位置并保存，旧的结论会被清空后重新分析。'
+          : '项目移动后在这里改路径；新目录必须已经存在。' }),
+      ]),
       h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '显示名称' }), nameInput]),
       h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '描述' }), descInput]),
       h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '额外忽略规则' }), ignoreInput]),
@@ -794,14 +875,22 @@ async function renderSettings(container, cardData) {
         class: 'btn btn-primary', text: '保存',
         onClick: async () => {
           try {
-            await api.updateProject(cardData.id, {
+            const patch = {
               name: nameInput.value.trim(), description: descInput.value.trim(),
               ignorePatterns: ignoreInput.value.split(',').map((s) => s.trim()).filter(Boolean),
-            });
-            toast('Saved', 'ok');
+            };
+            const nextPath = pathInput.value.trim();
+            if (nextPath && !sameLocalPath(nextPath, cardData.workspacePath)) patch.workspacePath = nextPath;
+            await api.updateProject(cardData.id, patch);
+            if (patch.workspacePath) {
+              toast('路径已更新，正在重新分析…', 'info', 6000);
+              try { await api.scan(cardData.id, { mode: 'quick' }); } catch { /* 下一次扫描会补上 */ }
+            } else {
+              toast('项目已更新', 'ok');
+            }
             await refreshShellData();
             Router.reload();
-          } catch (err) { toast(err.message, 'error'); }
+          } catch (err) { toast(errorText(err), 'error'); }
         },
       })]),
     ])),

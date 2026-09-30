@@ -8,6 +8,7 @@ import {
   JOB_TYPE, EVENT_TYPE, PROJECT_STATUS, PROJECT_HEALTH, TASK_STATUS, GATE_RESULT,
 } from '../domain/constants.js';
 import { newId, nowIso, truncate } from './util.js';
+import { WorkspaceError } from '../domain/errors.js';
 import { logger } from './logger.js';
 import { evSnapshot, evFile } from './evidence.js';
 import { classifyProject, identifyPurpose } from './categories.js';
@@ -52,6 +53,12 @@ export class Orchestrator {
     const metadata = await this.scanner.scan(project.workspace_path, {
       userPatterns: project.ignore_patterns || [],
     });
+    // A scan that read nothing must not be recorded as an analysis: stamping last_analyzed_at or
+    // overwriting the language/repo fields here would assert facts about a folder we cannot open.
+    if (!metadata.ok) {
+      this.events.record(projectId, EVENT_TYPE.SCAN_FAILED, `Quick scan failed: ${metadata.reason}`, { reason: metadata.reason }, { level: 'error' });
+      throw new WorkspaceError(`workspace scan failed: ${metadata.reason}`, '项目目录已不存在或读不到——在「整理」里改成新位置后重新分析，或删除这条记录。');
+    }
     const git = await this.gitAnalyzer.analyze(project.workspace_path, { includeDiff: true, recentCommitCount: 10 });
     const patch = {
       metadata,
@@ -107,7 +114,7 @@ export class Orchestrator {
     const metadata = await this.scanner.scan(project.workspace_path, { userPatterns: project.ignore_patterns || [] });
     if (!metadata.ok) {
       this.events.record(projectId, EVENT_TYPE.SCAN_FAILED, `Full scan failed: ${metadata.reason}`, { reason: metadata.reason }, { level: 'error' });
-      throw new Error(`workspace scan failed: ${metadata.reason}`);
+      throw new WorkspaceError(`workspace scan failed: ${metadata.reason}`, '项目目录已不存在或读不到——在「整理」里改成新位置后重新分析，或删除这条记录。');
     }
 
     // 2. Git

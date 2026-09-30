@@ -5,7 +5,7 @@
  * or type a path. Either way the import classifies the project immediately.
  */
 import { api } from '../api.js';
-import { h, modal, toast, fmt, stateEmpty, stateLoading } from '../ui.js';
+import { h, modal, toast, fmt, stateEmpty, stateLoading, errorText } from '../ui.js';
 import { refreshShellData, state } from '../app.js';
 import { Router } from '../router.js';
 
@@ -69,13 +69,13 @@ export function openImportDialog(onDone = null) {
           finish(res.imported, res.skipped, category);
         }
       } catch (err) {
-        toast(`导入失败：${err.message}`, 'error');
+        toast(`导入失败：${errorText(err)}`, 'error');
         resetBtn();
       }
     },
   });
 
-  const hint = h('span', { class: 'muted small', text: '导入后会立即扫描并自动归类。' });
+  const hint = h('span', { class: 'muted small', text: '导入后立即扫描并自动归类；配置了 GitHub 令牌还会自动建私有仓库上传。' });
 
   const finish = async (imported, skipped, category) => {
     await refreshShellData();

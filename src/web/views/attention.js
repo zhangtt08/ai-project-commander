@@ -14,6 +14,7 @@ const KIND_LABEL = {
   risk: '风险',
   drift: '规范漂移',
   pending_review: '待复核',
+  workspace_missing: '目录已丢失',
 };
 
 const SEV_ORDER = ['critical', 'high', 'medium', 'low'];

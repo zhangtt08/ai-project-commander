@@ -35,7 +35,7 @@ function projectCard(cardData) {
       h('div', { class: 'path', text: meta.workspacePath }),
       h('div', { class: 'stack-sm' }, [
         h('div', { class: 'small', text: '这个目录当前不在磁盘上，历史结论已隐藏，因为它们不代表现状。' }),
-        h('div', { class: 'small muted', text: `最后一次分析：${fmt.date(meta.lastAnalyzedAt)} —— 请在「整理」中修正路径后重新分析，或删除这条记录。` }),
+        h('div', { class: 'small muted', text: `最后一次分析：${fmt.date(meta.lastAnalyzedAt)} —— 请在「项目」页点「整理」修正路径后重新分析，或删除这条记录。` }),
       ]),
     ]);
   }

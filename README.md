@@ -119,6 +119,32 @@ npm run dev        # → http://127.0.0.1:8787（被占用时自动 +1，横幅�
   added twice, and lets you import several at once.
 - **输入路径** — an absolute path, plus an optional name and category.
 
+**If a folder moves or you delete it in Explorer**, Commander stops presenting verdicts about it:
+the card turns into 目录已不存在, the project drops out of the health counts and becomes one
+critical attention item, and 优化建议 keeps a single honest entry quoting the real path and the
+time of the last successful analysis. Open 项目 → 整理 (or 设置 in the project page) and type the
+new location to relink it — the stale record is cleared and the project is re-analysed, so there is
+no need to delete and re-import. A relink to a path that doesn't exist, to a file, or to a folder
+another project already owns is refused with a reason and changes nothing.
+
+Each project's overview page carries a **GitHub 私有仓库自动上传** card: the last stage (已上传 /
+未开启 / 缺少令牌 / 上传失败 / 未尝试), the reason verbatim, the private repo link once one exists, a
+**立即上传** button, and a link to Settings. With no token stored it says plainly that nothing was
+sent anywhere — the feature is never invisible, and clicking it with no token returns the reason
+instead of failing silently.
+
+### Browsing your GitHub repositories without downloading them
+
+侧栏 **GitHub → 仓库（只读）**（`#/github`）lists the repositories on your account — name, 私有/公开,
+primary language, size, last push, description — and **只读查看** opens detail assembled from four
+REST reads: language breakdown, the root file listing and the README text. Nothing is cloned or
+written: no `git clone`, no `fetch`, no file on disk, no database row. The token stays server-side
+(the browser only ever sees `__stored__`), and each part degrades on its own, so a README that
+GitHub is still generating doesn't blank the panel.
+
+This complements the publish path: Commander manages what is on this machine, and can additionally
+*look at* what is on GitHub without pulling it down.
+
 Either way Commander then:
 
 1. scans it (structure, stack, specs, markers, sensitive files),
@@ -229,11 +255,13 @@ See `GET /api/security` and the in-app **Security** page.
   installed and downloading it was declined. 270 unit/integration tests pass, and the UI
   was verified by driving the running app and capturing real window pixels, but the 21-step
   E2E run is unverified.
-- **GitHub publishing is verified only up to GitHub's answer.** The private-repo create
-  request, credential handling, commit identity, remote guard and an actual push are all
-  covered by tests (a local fake API and a local bare remote), and the failure paths were
-  exercised against live `api.github.com`. The one thing not proven end-to-end is GitHub
-  accepting a real token — that needs a user-supplied PAT.
+- **GitHub publishing is verified end-to-end against real GitHub** (2026-09-30): importing a
+  project created a `private: true` repository on the account and pushed to it — confirmed by
+  reading the repository, its file list and its commit back from GitHub's API, not just from
+  Commander's own state. The credential used is the machine's own GitHub CLI login (`gh auth
+  token`, scopes `gist, read:org, repo`), piped into Settings without ever being printed; the API
+  only ever echoes `__stored__`. One thing the token cannot do is delete a repository (that needs
+  a `delete_repo` scope), so removing a published repo stays a manual step on GitHub's side.
 
 ## Roadmap
 

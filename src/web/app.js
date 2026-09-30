@@ -16,15 +16,10 @@ export const state = {
 const NAV = [
   { group: '概览' },
   { id: 'dashboard', label: '仪表盘', path: '/' },
-  { id: 'attention', label: '关注中心', path: '/attention', countKey: 'attention' },
   { id: 'projects', label: '项目', path: '/projects', countKey: 'projects' },
-  { id: 'search', label: '搜索', path: '/search' },
-  { group: '运维' },
-  { id: 'jobs', label: '分析队列', path: '/jobs' },
-  { id: 'events', label: '全局时间线', path: '/events' },
-  { group: '系统' },
+  { id: 'attention', label: '关注中心', path: '/attention', countKey: 'attention' },
+  { id: 'github', label: 'GitHub 仓库', path: '/github' },
   { id: 'settings', label: '设置', path: '/settings' },
-  { id: 'security', label: '安全模型', path: '/security' },
 ];
 
 export function setTopbar(title, subtitle = '', actions = []) {
@@ -137,11 +132,12 @@ async function boot() {
     import('./views/projects.js'),
     import('./views/project.js'),
     import('./views/settings.js'),
+    import('./views/github-remote.js'),
     import('./views/search.js'),
     import('./views/jobs.js'),
     import('./views/notfound.js'),
   ]);
-  const [dashboard, attention, projects, project, settings, search, jobs, notfound] = views;
+  const [dashboard, attention, projects, project, settings, githubRemote, search, jobs, notfound] = views;
 
   router
     .on('/', () => dashboard.render())
@@ -154,6 +150,7 @@ async function boot() {
     .on('/events', () => jobs.render('events'))
     .on('/settings', () => settings.render())
     .on('/security', () => settings.renderSecurity())
+    .on('/github', () => githubRemote.render())
     .on('/notfound', () => notfound.renderNotFound({ path: window.location.hash }));
 
   try {

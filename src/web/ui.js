@@ -28,6 +28,18 @@ export function append(parent, children) {
 }
 
 export function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
+
+/** Windows paths arrive as both C:\dir and c:/dir. Used to decide whether a path really changed. */
+export function sameLocalPath(a, b) {
+  const norm = (s) => String(s || '').trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  return norm(a) === norm(b) && norm(a) !== '';
+}
+
+/** Server errors carry a technical message plus a user-facing hint; the UI shows both. */
+export function errorText(err) {
+  const message = (err && err.message) || '未知错误';
+  return err && err.hint ? `${message} —— ${err.hint}` : message;
+}
 export function frag(children) { return append(document.createDocumentFragment(), children); }
 
 export const fmt = {

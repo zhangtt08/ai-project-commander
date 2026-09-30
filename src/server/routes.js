@@ -164,6 +164,7 @@ export function buildRouter(app) {
 
   r.patch('/api/projects/:id', ({ params, body }) => {
     needProject(app, params.id);
+    if (body.workspacePath !== undefined) app.setWorkspacePath(params.id, String(body.workspacePath).slice(0, 1000));
     if (body.name !== undefined) app.renameProject(params.id, String(body.name).slice(0, 200));
     if (body.description !== undefined) app.setDescription(params.id, String(body.description).slice(0, 2000));
     if (body.ignorePatterns !== undefined) app.setIgnorePatterns(params.id, Array.isArray(body.ignorePatterns) ? body.ignorePatterns.map(String).slice(0, 100) : []);
@@ -197,6 +198,17 @@ export function buildRouter(app) {
     if (!settings['github.token']) return { ok: false, reason: '尚未保存 GitHub 令牌。' };
     const { validateToken } = await import('../core/github-publisher.js');
     return validateToken({ settings });
+  });
+
+  // ── GitHub 仓库只读浏览（不下载到本地）────────────────────────────────
+  r.get('/api/github/remote/repos', async ({ query }) => {
+    const { listRemoteRepos } = await import('../core/github-remote.js');
+    return listRemoteRepos({ settings: app.githubSettings(), search: String(query.q || '') });
+  });
+
+  r.get('/api/github/remote/repo', async ({ query }) => {
+    const { readRemoteRepo } = await import('../core/github-remote.js');
+    return readRemoteRepo({ settings: app.githubSettings(), fullName: String(query.name || '') });
   });
 
   // ── 可优化的建议 ────────────────────────────────────────────────────────

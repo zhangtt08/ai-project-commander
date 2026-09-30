@@ -137,9 +137,23 @@
   提交身份由 GitHub 账号推导（本机没有全局 user.name 也能提交）；令牌不出现在 argv /
   返回值 / 项目记录中；`GIT_TERMINAL_PROMPT=0` 与 45s 超时；API 全断时不抛异常并把原因
   写进 `metadata.github`；导入不等待上传完成。
-- **仍未验证**：GitHub 真正接受令牌、创建私有仓库并接收推送的服务端应答 —— 本机没有
-  `gh` CLI 也没有 `GITHUB_TOKEN`，需要用户提供一个有 repo 权限的 PAT 才能跑通。
-  未配置令牌时导入照常成功，`github.stage = 'disabled'` 并给出中文原因。
+- **已于 2026-09-30 真机端到端验证通过**：本机其实一直有可用的 GitHub 凭据 ——
+  GitHub CLI 装在 `C:\Program Files\GitHub CLI\gh.exe`（不在 PATH 上，所以早先的探测没找到），
+  且全局 git 配了 `credential.https://github.com.helper = gh auth git-credential`。
+  用 `gh auth token` 取到令牌（值不打印，直接写入本地设置）后：
+  - `POST /api/github/verify` → `{ok:true, username:'zhangtt08'}`；
+  - 导入一个临时项目 → `metadata.github = {ok:true, stage:'pushed', created:true,
+    fullName:'zhangtt08/apc-gh-verify-…', branch:'main'}`，约 6 秒完成；
+  - **GitHub 服务端回读**（`gh api repos/…`）：`private: true`、`default_branch: main`、
+    文件 `.gitignore / README.md / package.json / src`、提交信息
+    「chore: 导入 AI Project Commander 管理的项目」——非公开与真实推送都由 GitHub 自己确认。
+  - 未配置令牌时导入照常成功，`github.stage = 'disabled'` 并给出中文原因。
+- **遗留一件小事**：那个验证用的临时私有仓库**没能自动删掉** —— gh 的 OAuth 令牌 scope 只有
+  `gist, read:org, repo`，GitHub 的删除仓库接口要求 `delete_repo`，返回
+  `403 Must have admin rights to Repository.`。需要用户在
+  `https://github.com/zhangtt08/apc-gh-verify-1790727079546` 手动删除（仓库是私有的，
+  里面只有 3 个占位文件 + 自动生成的 .gitignore）。这不是产品缺陷：Commander 的删除流程
+  只负责记录 + 源目录，不调用远端删库。
 
 ### BUG-014 · 已修复：导入被 GitHub 上传阻塞（最长 120 秒）
 
@@ -163,3 +177,146 @@
   并在 `run-e2e.js` 里加了断言：seed 输出的 `Data dir:` 必须等于本次要求的隔离目录，
   否则直接抛错拒绝继续。这样同类回归不可能再静默发生。
 - **验证**: 修复后重新 seed，演示项目落在临时目录，真实库保持 1 个真实项目不变。
+
+---
+
+## 2026-09-29 BUG-015 · 已修复：目录被外部删除/移动后仍展示旧的结论
+
+- **类型**: BUG（已修复）
+- **症状**: 用户在资源管理器里删掉（或挪走）一个已登记的项目目录后，面板依然显示
+  `健康 = 警告`、`9 条优化建议`、`单元测试 188/203`，最后分析时间 5 天前。Commander
+  在对一个它已经读不到的目录断言事实 —— 违反本项目「只说真实证据支持的话」的底线。
+- **修复**:
+  - `projectCard()` 与新增的 `suggestionsView()` 以 `fs.existsSync(workspace_path)` 为准；
+    目录不在时不再输出缓存的 classification/purpose/suggestionSummary，health 记为
+    `unknown`，只留一条 `workspace-missing` 建议，正文引用真实路径与真实分析时间。
+  - `attentionCenter()` 对该项目只产出 1 条 `workspace_missing`（critical）并 `continue`，
+    跳过所有需要读盘的规则；`dashboard().counts` 把它计入 `critical` 与新的 `missing`，
+    不再沿用旧的 warning。
+  - UI：仪表盘卡片改为「目录已不存在」态，项目列表「健康」列显示「目录已丢失」，
+    详情页顶部横幅 + 优化建议页只显示这一条。
+  - 新增 `setWorkspacePath()`（PATCH `/api/projects/:id`）：路径必须存在且是目录、且没被
+    其他项目占用，否则 400 并保留原记录；成功时清空旧结论、重挂 watcher、入队重新分析。
+    这是「项目被移动」的唯一正规出路，用户不必删了重加。
+- **验证**: `tests/integration/workspace-missing.test.js` 12 个用例（缓存遮蔽、attention 只
+  1 条、counts 归类、relink 的四种拒绝、HTTP 面）。真机复核：用户的
+  `C:/Users/Administrator/Desktop/Git一键上传` 已不在磁盘上，修复后面板从 4 条过期关注项
+  变成 1 条「项目目录已不存在」，建议从 9 条变成 1 条，危急计数 0→1、警告 1→0。
+  `node scripts/verify.js` 5/5 通过。
+- **顺带**: 校验类错误提示补了中文 hint，并用 `errorText(err)` 统一展示
+  （「目录不存在，无法指向它：… —— 项目移动后请填写新的位置」），不再是裸英文。
+  ADR-009 不受影响：relink 只读目录元数据，不向工作区写任何东西。
+
+---
+
+## 2026-09-30 BUG-016 · 已修复：GitHub 自动上传在未配置时完全不可见
+
+- **类型**: BUG（已修复）
+- **症状**: 干净首启实测：`metadata.github` 为 `null`、`/api/settings` 里 github 三项都是 null，
+  项目页没有任何地方说明"每加入一个项目会自动建私有仓库并上传"这件事存在、没开、或者该去哪开。
+  对用户来说这条主功能等于不存在 —— 属于"半成品"级别的问题。
+- **修复**: 项目详情页概览新增「GitHub 私有仓库自动上传」卡片：状态徽章（已上传/未开启/缺少令牌/
+  上传失败/未尝试）+ 服务端给出的中文原因 + 仓库链接（pushed 后）+「立即上传」按钮 +
+  跳转设置的链接；没配令牌时明确写"未配置令牌时不会有任何网络写入"。`+ 添加项目` 的提示同步
+  说明配置令牌后会自动上传。
+- **顺带发现并修掉的真实缺陷**: 按钮第一次上线时读的是 `res.ok`，而路由返回的是
+  `{ result, project }` —— 点击后提示变成 `未上传：undefined`（在真机上实测到的）。改为读
+  `res.result.*`，字段名按 publisher 的真实产出对齐（`ok/stage/reason/htmlUrl/fullName`，
+  没有 `repoUrl`）。
+- **验证**: 在 `github-publish-app.test.js` 加了 HTTP 用例锁住这个响应形状（含 detail 里记录的
+  `github.reason` 与 result 一致），并在隔离实例（临时 dataDir，端口 8788）实测：点击按钮 →
+  提示「未上传：未配置 GitHub 令牌，无法自动上传。」，卡片显示 未开启 + 真实时间。
+  `node scripts/verify.js` 5/5。
+- **仍未闭环**: GitHub 服务端真实受理（需要用户提供一个 repo 权限的 PAT）—— 见 LIMIT-013。
+
+---
+
+## 2026-09-30 BUG-017 · 已修复：彻底删除（清源）在改过路径/名字后永远无法确认
+
+- **类型**: BUG（已修复）—— 只有把整条流程在真实 UI 里点一遍才会暴露
+- **症状**: 「整理」对话框要求输入**项目显示名**作为清源口令，而服务端的 `confirm_token`
+  是**磁盘上的真实目录名**（`source-purge.js` 用 `path.basename(real)`）。两者一致时看不出问题；
+  一旦项目被改名或用过 BUG-015 的重新指向，用户照着界面提示输入就会一直收到
+  「确认口令不匹配：请填写「<目录名>」」，等于彻底删除功能失效。
+  实测：导入 `apc-move-src` → 磁盘上移到 `apc-moved-here` → 重新指向 → 按界面提示输入
+  `apc-move-src` → 被拒。
+- **修复**: 对话框直接用它已经拿到的删除预览 `assessment.confirmToken` 作为唯一口令：
+  勾选清源后 placeholder 实时显示真实目录名，口令不匹配时说明"这是磁盘上真实的目录名"，
+  预览尚未返回时提示稍等而不是静默失败，`assessment.ok === false`（受保护路径等）时给出原因。
+  只删记录的模式仍然要求输入 `DELETE`。
+- **验证**: 真实 UI 走通 —— 错误口令 `DELETE` 被拒并给出中文解释；按提示输入 `apc-moved-here`
+  → 提示「已删除记录并清除源文件：C:/Users/Administrator/Desktop/apc-moved-here（3 个文件）」，
+  目录与记录同时消失，列表 0 条。测试夹具全部由本次会话创建并已清理，桌面与临时目录无残留。
+- **顺带**: BUG-015 之后「整理」对话框同时承担改路径职责，因此这一轮的隔离实例把
+  导入 → 外部移动 → 目录已丢失 → 重新指向 → 自动重新分析 → 清源删除 整条链在真实浏览器里跑完，
+  每一步的状态都来自服务端真实返回。`node scripts/verify.js` 5/5。
+
+---
+
+## 2026-09-30 BUG-018 · 已修复：对已消失目录的 quickScan 会写库并刷新分析时间
+
+- **类型**: BUG（已修复）—— 违反"只对真实读到的内容下结论"的底线
+- **症状**: `orchestrator.quickScan()` 不做 `metadata.ok` 检查就落库：目录已被删除时，
+  scanner 返回 `{ok:false, reason:'workspace_not_found'}`，quickScan 依然把 `last_analyzed_at`
+  刷成当前时间、把 `repository_type` 覆写为 `none`。实测：删除夹具目录后再 quickScan，
+  `last_analyzed_at` 由 …221Z 变成 …227Z —— 面板于是宣称"刚刚分析过"，而它什么也没读到；
+  BUG-015 里那些"结论来自上次分析的缓存"的说明也会跟着指向一个假时间。
+  （`fullScan` 早就有 guard：直接抛 `workspace scan failed: workspace_not_found`。）
+- **修复**: quickScan 对齐 fullScan —— `metadata.ok` 为假时记录 `SCAN_FAILED` 事件并抛出同一个
+  错误，不写 metadata、不刷 `last_analyzed_at`、不动 language/framework/repo 字段。
+  影响面：`addProjectAndClassify` 本来就 try/catch 了 quickScan，导入流程不受影响；
+  watcher 在目录被外部删除后的自动快速扫描，现在会在时间线里留下一次诚实的失败，
+  而不是静默地伪造一次"分析成功"。
+- **验证**: `workspace-missing.test.js` 新增用例「a scan of a vanished folder fails and rewrites
+  nothing」——先真实扫描（拿到 last_analyzed_at 与 classification），删除夹具目录，再扫描必须
+  reject，并断言 `last_analyzed_at` 与 classification 逐字不变。该文件 13/13 绿。
+- **顺带**: 关注中心里新增的 `workspace_missing` 条目原本会把英文枚举 `workspace_missing`
+  当 chip 直接显示出来；补了中文标签「目录已丢失」。真机复核 `#/attention`：仅 1 行、
+  无 undefined/null 文本。
+- **再顺带**: 这个失败原本以裸 `Error` 抛出，HTTP 层统一包成
+  `500 {"message":"Internal error","hint":""}` —— 用户点「快速扫描/全量扫描」只看到"内部错误"，
+  看不到真实原因。quickScan 与 fullScan 现在都抛 `WorkspaceError`，实测返回
+  `400 workspace_error` + `hint：项目目录已不存在或读不到——在「整理」里改成新位置后重新分析，
+  或删除这条记录。`，项目页的扫描失败 toast 也改用 `errorText()` 把这句中文提示带出来。
+  真机复核：两种扫描模式都是 400，且 `last_analyzed_at` 仍是 2026-09-24T14:48:36.577Z（未被伪造）。
+
+---
+
+## 2026-09-30 · E2E 断言与当前契约重新对齐（但仍未执行，见 LIMIT-011）
+
+BUG-017 改了清源确认口令的来源（项目显示名 → 真实目录名），`e2e/e2e_test.py` 的
+`delete_preview` 步骤原本断言界面文案「彻底删除需要输入项目名」——那会在一个**正确**的产品上失败。
+按派生方式改成不钉死具体口令的中性断言：
+
+- 拒绝文案只断言前缀「彻底删除需要输入」；
+- 新增：勾选清源后，确认输入框的 placeholder 必须来自删除预览（`输入「…」` /
+  `当前源目录不允许彻底删除` / 正在载入三者之一），证明提示不再是一个写死的词；
+- 新增：「整理」对话框必须带有可编辑且已填好当前路径的「工作区路径」字段（BUG-015 的重新指向入口）。
+
+`python -m py_compile e2e/e2e_test.py` 通过；**这个套件在本机没有被执行过**（本机无 Chromium，
+用户 2026-09-26 明确拒绝为此下载安装），所以它的有效性仍未被证明 —— 不要把它算作交付证据。
+
+---
+
+## 2026-09-30 · 新增能力：GitHub 仓库只读浏览（不下载到本地）
+
+- **来源**: 用户追加目标 —— "进一步的作用就是链接 github，根据 github 上我的仓库可以进一步读取我的
+  项目，这一步不用把项目下到本地，只是通过 github 读取。"
+- **实现**: `src/core/github-remote.js`（`listRemoteRepos` / `readRemoteRepo`）+
+  `GET /api/github/remote/repos?q=` 与 `GET /api/github/remote/repo?name=owner/repo` +
+  侧栏「GitHub → 仓库（只读）」页面 `#/github`。
+- **边界**: 全程只走 GitHub REST，**没有任何 clone / fetch / 写盘 / 写库**；令牌只出现在
+  Authorization 头里，响应体经 `redact` 清洗；单个端点失败只降级那一块（README 202/403 时其余照常）。
+  README 用 `Accept: application/vnd.github.raw+json` 直接取原文，最多 20 KB，超出显式标注截断。
+- **真机验证**（用他账号的真实凭据，只读）：列出 **16 个仓库、全部私有**，含语言与体积；
+  读 `zhangtt08/ai-project-commander` 得到 `private: true`、语言 JavaScript 79% / Python 12.3% /
+  C# 4.4%、README 15230 字符、根目录 11 项，四个子请求全 ok；页面实测渲染出
+  仓库数/私有/筛选/读取时间四张指标 + 16 行 + 详情卡（语言构成 / 根目录 / README），
+  页面文本里不含 `gho_` 等令牌痕迹。
+- **测试**: `tests/unit/github-remote.test.js` 10 个用例（无令牌不联网、字段映射、本地筛选、
+  401 原因不泄露令牌、传输失败降级、四读组装、README 单独降级、仓库不存在、非法名先拒、
+  大 README 截断）。`node scripts/verify.js` 5/5。
+- **本轮清理**: `.run/` 运行期脚本与截图已清空（981 KB → 4 KB）；`e2e/__pycache__` 从 git 取消跟踪
+  并写进 `.gitignore`。`data/desktop/browser`（约 278 MB，Edge app 模式自带缓存）**没有删**——
+  它是正在运行的窗口的用户数据目录，删掉会打断他的界面；需要回收时先关窗口再
+  `rm -rf data/desktop/browser`，下次启动会自动重建。
