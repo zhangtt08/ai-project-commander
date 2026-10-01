@@ -1094,12 +1094,15 @@ namespace AIProjectCommander.Desktop
                     phase = PhaseFailed;
                     return;
                 }
-                appForm = new ChromeForm("AI Project Commander", appIcon);
+                // WebView2 运行库缺失时（同步判定）先退回 Edge --app，避免半开窗口。
+                if (!ChromeForm.WebView2Available())
+                    throw new InvalidOperationException("本机缺少 WebView2 运行库。");
+                appForm = new ChromeForm();
                 appForm.Size = new Size(1440, 900);
                 appForm.MinimumSize = new Size(900, 600);
                 appForm.StartPosition = FormStartPosition.CenterScreen;
                 appForm.FormClosed += delegate { if (appForm != null && appForm.IsDisposed) appForm = null; };
-                appForm.AttachWebView(server.Url, cfg.BrowserProfileDir);
+                appForm.ConfigureWebView(server.Url, cfg.BrowserProfileDir);
                 appForm.Show();
             }
             catch (Exception ex)

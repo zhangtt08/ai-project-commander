@@ -9,12 +9,12 @@ using Microsoft.Web.WebView2.WinForms;
 
 namespace AIProjectCommander.Desktop
 {
-    // 无边框窗口 + 自绘标题栏（WebView2 壳）：三键内嵌、拖拽区返回 HTCAPTION（原生拖拽/贴靠/
-    // 双击最大化）、边缘命中返回 HTLEFT..HTBOTTOMRIGHT（保留系统级缩放）。
-    // 替代 Edge --app 模式窗口，让关闭/最大化等控制真正封装进软件内部。
+    // 无边框窗口:WebView2 铺满整窗,标题栏完全由网页承担 ——
+    // 侧栏品牌行与 topbar 声明 app-region: drag 即可拖拽(WebView2 非客户区支持),
+    // 网页自绘三键经 postMessage 调窗口动作;边缘命中仍走 WndProc 保留系统级缩放。
+    // 替代 Edge --app 模式窗口,让关闭/最大化等控制真正封装进软件内部。
     sealed class ChromeForm : Form
     {
-        const int HTCAPTION = 2;
         const int HTLEFT = 10;
         const int HTRIGHT = 11;
         const int HTTOP = 12;
@@ -27,76 +27,15 @@ namespace AIProjectCommander.Desktop
         const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
         const int DWMWCP_ROUND = 2;
 
-        readonly Panel titleBar;
-        readonly Panel content;
-        readonly Button maxButton;
         readonly WebView2 view = new WebView2();
-        readonly Label status = new Label();
-        string pendingUrl;
-        string profileDir;
 
-        public ChromeForm(string title, Icon icon)
+        public ChromeForm()
         {
-            Text = title;
             FormBorderStyle = FormBorderStyle.None;
             BackColor = Color.FromArgb(252, 252, 252);
-            Font = new Font("Segoe UI", 9F);
-
-            titleBar = new Panel();
-            titleBar.Dock = DockStyle.Top;
-            titleBar.Height = 36;
-            titleBar.BackColor = Color.FromArgb(252, 252, 252);
-
-            PictureBox pic = new PictureBox();
-            pic.Size = new Size(18, 18);
-            pic.Location = new Point(10, 9);
-            pic.SizeMode = PictureBoxSizeMode.Zoom;
-            try { if (icon != null) pic.Image = icon.ToBitmap(); } catch { }
-            titleBar.Controls.Add(pic);
-
-            Label label = new Label();
-            label.Text = title;
-            label.AutoSize = false;
-            label.Size = new Size(360, 36);
-            label.Location = new Point(34, 0);
-            label.TextAlign = ContentAlignment.MiddleLeft;
-            label.ForeColor = Color.FromArgb(22, 23, 28);
-            titleBar.Controls.Add(label);
-
-            Button closeButton = CaptionButton("\uE8BB", Color.FromArgb(207, 63, 79), Color.White);
-            closeButton.Click += delegate { Close(); };
-            maxButton = CaptionButton("\uE922", Color.FromArgb(227, 229, 235), Color.FromArgb(22, 23, 28));
-            maxButton.Click += delegate { ToggleMaximize(); };
-            Button minButton = CaptionButton("\uE921", Color.FromArgb(227, 229, 235), Color.FromArgb(22, 23, 28));
-            minButton.Click += delegate { WindowState = FormWindowState.Minimized; };
-            titleBar.Controls.Add(closeButton);
-            titleBar.Controls.Add(maxButton);
-            titleBar.Controls.Add(minButton);
-
-            titleBar.Resize += delegate
-            {
-                closeButton.Left = titleBar.Width - 46;
-                maxButton.Left = closeButton.Left - 46;
-                minButton.Left = maxButton.Left - 46;
-                label.Width = Math.Max(80, minButton.Left - label.Left - 8);
-            };
-
-            status.Dock = DockStyle.Fill;
-            status.TextAlign = ContentAlignment.MiddleCenter;
-            status.ForeColor = Color.FromArgb(90, 96, 110);
-            status.Visible = false;
 
             view.Dock = DockStyle.Fill;
-            view.Visible = false;
-
-            content = new Panel();
-            content.Dock = DockStyle.Fill;
-            content.BackColor = Color.White;
-            content.Controls.Add(view);
-            content.Controls.Add(status);
-
-            Controls.Add(content);
-            Controls.Add(titleBar);
+            Controls.Add(view);
 
             try
             {
@@ -104,15 +43,6 @@ namespace AIProjectCommander.Desktop
                 DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, 4);
             }
             catch { }
-        }
-
-        public Panel ContentPanel { get { return content; } }
-
-        public void ShowAndFocus()
-        {
-            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-            Show();
-            Activate();
         }
 
         // WebView2 运行库是否可用（同步判定，供调用方在降级前检测）。
@@ -126,69 +56,67 @@ namespace AIProjectCommander.Desktop
             catch { return false; }
         }
 
-        public void AttachWebView(string url, string userDataFolder)
+        // 配置 WebView2:启用非客户区支持(app-region 生效),接线网页三键消息
+        public void ConfigureWebView(string url, string userDataFolder)
         {
-            pendingUrl = url;
-            profileDir = userDataFolder;
             Load += async delegate
             {
                 try
                 {
-                    Directory.CreateDirectory(profileDir);
-                    CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(null, profileDir, null);
+                    Directory.CreateDirectory(userDataFolder);
+                    CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder, null);
                     await view.EnsureCoreWebView2Async(environment);
                     view.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                     view.CoreWebView2.Settings.IsStatusBarEnabled = false;
-                    view.CoreWebView2.NewWindowRequested += delegate(object sender, CoreWebView2NewWindowRequestedEventArgs e)
-                    {
-                        var deferral = e.GetDeferral();
-                        try { Process.Start(new ProcessStartInfo(e.Uri) { UseShellExecute = true }); } catch { }
-                        deferral.Complete();
-                        e.Handled = true;
-                    };
-                    status.Visible = false;
-                    view.Visible = true;
-                    view.CoreWebView2.Navigate(pendingUrl);
+                    view.CoreWebView2.Settings.IsNonClientRegionSupportEnabled = true;
+                    view.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
+                    view.CoreWebView2.WebMessageReceived += OnWebMessage;
+                    view.CoreWebView2.Navigate(url);
                 }
                 catch (Exception ex)
                 {
-                    status.Visible = true;
-                    status.Text = "内嵌浏览器初始化失败：" + ex.Message + "\n服务地址：" + pendingUrl;
+                    MessageBox.Show(
+                        "内嵌浏览器初始化失败：" + ex.Message +
+                        "\n服务地址：" + url +
+                        "\n\n可安装 WebView2 Runtime 后重试，或直接在浏览器打开服务地址。",
+                        "AI Project Commander", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             };
         }
 
-        static Button CaptionButton(string glyph, Color hoverBack, Color hoverFore)
+        void OnWebMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
-            Button b = new Button();
-            b.Text = glyph;
-            b.Font = new Font("Segoe MDL2 Assets", 9F);
-            b.Size = new Size(46, 36);
-            b.Dock = DockStyle.None;
-            b.FlatStyle = FlatStyle.Flat;
-            b.FlatAppearance.BorderSize = 0;
-            b.FlatAppearance.MouseOverBackColor = hoverBack;
-            b.ForeColor = Color.FromArgb(90, 96, 110);
-            b.BackColor = Color.FromArgb(252, 252, 252);
-            b.Tag = "caption-button";
-            b.MouseEnter += delegate { b.ForeColor = hoverFore; };
-            b.MouseLeave += delegate { b.ForeColor = Color.FromArgb(90, 96, 110); };
-            return b;
+            string msg = e.TryGetWebMessageAsString();
+            if (msg == "window:minimize") WindowState = FormWindowState.Minimized;
+            else if (msg == "window:toggle-maximize") ToggleMaximize();
+            else if (msg == "window:close") Close();
         }
 
         void ToggleMaximize()
         {
-            if (WindowState == FormWindowState.Maximized)
-            {
-                WindowState = FormWindowState.Normal;
-                maxButton.Text = "\uE922";
-            }
-            else
+            bool willMaximize = WindowState != FormWindowState.Maximized;
+            if (willMaximize)
             {
                 MaximizedBounds = Screen.FromControl(this).WorkingArea;
                 WindowState = FormWindowState.Maximized;
-                maxButton.Text = "\uE923";
             }
+            else
+            {
+                WindowState = FormWindowState.Normal;
+            }
+            try
+            {
+                view.CoreWebView2.PostWebMessageAsString(willMaximize ? "window:maximized:true" : "window:maximized:false");
+            }
+            catch { }
+        }
+
+        static void OnNewWindowRequested(object sender, CoreWebView2NewWindowRequestedEventArgs e)
+        {
+            var deferral = e.GetDeferral();
+            try { Process.Start(new ProcessStartInfo(e.Uri) { UseShellExecute = true }); } catch { }
+            deferral.Complete();
+            e.Handled = true;
         }
 
         protected override void OnActivated(EventArgs e)
@@ -217,11 +145,6 @@ namespace AIProjectCommander.Desktop
                 if (right) { m.Result = (IntPtr)HTRIGHT; return; }
                 if (top) { m.Result = (IntPtr)HTTOP; return; }
                 if (bottom) { m.Result = (IntPtr)HTBOTTOM; return; }
-                if (p.Y <= titleBar.Height && p.Y > edge)
-                {
-                    m.Result = (IntPtr)HTCAPTION;
-                    return;
-                }
             }
             base.WndProc(ref m);
         }

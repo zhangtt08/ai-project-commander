@@ -44,8 +44,41 @@ export function setTopbar(title, subtitle = '', actions = []) {
   bar.appendChild(h('div', { class: 'topbar-actions' }, [
     h('div', { class: 'searchbox' }, [input, h('kbd', { text: 'Ctrl K' })]),
     ...actions,
+    windowButtons(),
   ]));
   focusSearch = () => input.focus();
+}
+
+// 桌面壳（WebView2 + IsNonClientRegionSupportEnabled）内的自绘窗口三键；
+// 浏览器里 window.chrome.webview 不存在，自动不渲染。
+function windowButtons() {
+  const webview = typeof window !== 'undefined' && window.chrome && window.chrome.webview;
+  if (!webview) return null;
+  const send = (cmd) => () => webview.postMessage(cmd);
+  let maximized = false;
+  const maxBtn = h('button', {
+    class: 'win-btn',
+    'aria-label': '最大化',
+    title: '最大化 / 还原',
+    onclick: send('window:toggle-maximize'),
+  });
+  const render = () => {
+    maxBtn.innerHTML = maximized
+      ? '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M2.5 2.5V1h7v7H8" fill="none" stroke="currentColor"/><rect x="0.5" y="2.5" width="6.5" height="6.5" fill="none" stroke="currentColor"/></svg>'
+      : '<svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor"/></svg>';
+  };
+  webview.addEventListener('message', (e) => {
+    if (e.data === 'window:maximized:true') { maximized = true; render(); }
+    if (e.data === 'window:maximized:false') { maximized = false; render(); }
+  });
+  render();
+  return h('div', { class: 'win-controls' }, [
+    h('button', { class: 'win-btn', 'aria-label': '最小化', title: '最小化', onclick: send('window:minimize') },
+      (() => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'span'); s.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor"/></svg>'; return s.firstChild; })()),
+    maxBtn,
+    h('button', { class: 'win-btn win-btn-close', 'aria-label': '关闭', title: '关闭', onclick: send('window:close') },
+      (() => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'span'); s.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"/></svg>'; return s.firstChild; })()),
+  ]);
 }
 
 let focusSearch = null;
