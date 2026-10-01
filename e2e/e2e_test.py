@@ -283,44 +283,40 @@ def suggestions(page):
     expect(page.locator("details summary", has_text="分类依据").first).to_be_visible(timeout=10000)
 
 
-@step("delete dialog previews source removal without performing it")
+@step("delete is one click, and wiping the folder stays an opt-in extra")
 def delete_preview(page):
     page.goto(BASE + "/#/projects", wait_until="domcontentloaded")
-    page.wait_for_selector("button:has-text('整理')", timeout=20000)
-    page.locator("button:has-text('整理')").first.click()
+    page.wait_for_selector("button:has-text('删除')", timeout=20000)
+    page.locator("tbody tr button:has-text('删除')").first.click()
     page.wait_for_selector(".modal", timeout=10000)
-    expect(page.locator(".modal")).to_contain_text("删除项目", timeout=5000)
-    expect(page.locator(".modal")).to_contain_text("同时删除电脑上的项目源文件", timeout=5000)
-    # record-only is the default, and the dialog says so
-    expect(page.locator(".modal")).to_contain_text("源码目录保持不变", timeout=5000)
-    # the dialog is also where a moved folder gets re-pointed, so the path is editable and filled
-    path_field = page.locator(".modal input[aria-label='工作区路径']")
-    expect(path_field).to_be_visible(timeout=5000)
-    assert path_field.input_value().strip(), "the workspace path field must be prefilled"
-    # ticking the destructive option must surface the assessment and a warning
-    page.locator(".modal input[type=checkbox]").first.check()
-    expect(page.locator(".modal .danger-note")).to_be_visible(timeout=10000)
+    modal = page.locator(".modal")
+    expect(modal).to_contain_text("从 Commander 移除这个项目的记录", timeout=5000)
+    expect(modal).to_contain_text("磁盘上的项目目录不会被改动", timeout=5000)
+    # The everyday action must not be gated by a choice the user does not want to make.
+    assert modal.locator("input[type=checkbox]").count() == 0, "delete must not ask to tick an option"
+    # Wiping the source directory is a separate, deliberately hidden step.
+    assert not modal.locator("input[aria-label='彻底删除确认']").is_visible(), \
+        "the purge step must start collapsed"
+    page.locator(".modal button:has-text('连磁盘上的目录一起删')").click()
     # The assessment either sizes the folder or explains why it refuses to touch it.
     # Demo fixtures live under Commander's own data dir, so a refusal is a valid answer —
     # what must never happen is silence.
     expect(page.locator(".modal")).to_contain_text("源目录", timeout=15000)
     assess = page.locator(".modal").inner_text()
-    assert ("个文件" in assess) or ("拒绝删除" in assess) or ("不可删除" in assess), \
+    assert ("个文件" in assess) or ("不可清除" in assess) or ("无法评估" in assess), \
         "the assessment must report a size or a refusal reason"
-    # The prompt states the token that actually unlocks a purge: the real directory name, which
-    # is not the display name and not a fixed word. Silence or a stale hint is the bug.
-    placeholder = page.locator(".modal input[aria-label='删除确认']").get_attribute("placeholder") or ""
+    # The purge prompt states the token that actually unlocks it: the real directory name.
+    placeholder = page.locator(".modal input[aria-label='彻底删除确认']").get_attribute("placeholder") or ""
     assert ("输入「" in placeholder) or ("不允许彻底删除" in placeholder) or ("载入" in placeholder), \
         f"purge prompt must come from the assessment, got: {placeholder}"
-    # and a purge refuses to run without that token typed back
-    page.fill(".modal input[aria-label='删除确认']", "not-the-token")
-    page.locator(".modal button:has-text('删除')").click()
-    page.wait_for_selector(".modal", timeout=5000)  # still open -> refused
-    expect(page.locator(".modal")).to_contain_text("彻底删除需要输入", timeout=5000)
-    page.locator(".modal .btn-ghost").first.click()
+    # A wrong token is refused and nothing is deleted.
+    page.fill(".modal input[aria-label='彻底删除确认']", "not-the-token")
+    page.locator(".modal button:has-text('永久删除记录与源文件')").click()
+    expect(modal).to_contain_text("请输入「", timeout=5000)
+    rows_before = page.locator("tbody tr").count()
+    page.locator(".modal button:has-text('取消')").click()
     expect(page.locator(".modal")).to_have_count(0, timeout=5000)
-    # nothing was deleted
-    assert page.locator("tbody tr").count() >= 3, "the preview must not remove any project"
+    assert page.locator("tbody tr").count() == rows_before, "the preview must not remove any project"
 
 
 @step("settings expose GitHub private-repo publishing without leaking the token")

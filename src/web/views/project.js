@@ -70,7 +70,7 @@ export async function render(projectId, tab = 'overview') {
       onClick: () => runScan('full'),
     }),
     // Deletion belongs where the project is open, not three clicks away in a settings tab.
-    h('button', { class: 'btn btn-danger', text: '删除项目', onClick: () => openDeleteDialog(cardData) }),
+    h('button', { class: 'btn btn-danger', text: '删除项目', onClick: () => openDeleteDialog(cardData, { onDone: () => Router.go('/projects') }) }),
   ]);
 
   const tabsBar = h('div', { class: 'tabs', role: 'tablist' }, TABS.map((t) => h('button', {

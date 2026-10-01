@@ -140,7 +140,7 @@ function projectTable(cards) {
     { label: '操作', render: (r) => h('div', { class: 'row' }, [
       h('button', { class: 'btn btn-sm', text: '扫描', onClick: (e) => { e.stopPropagation(); scan(r.id); } }),
       h('button', { class: 'btn btn-sm', text: '整理', onClick: (e) => { e.stopPropagation(); openProjectSettings(r); } }),
-      h('button', { class: 'btn btn-sm btn-danger', text: '删除', onClick: (e) => { e.stopPropagation(); openDeleteDialog(r); } }),
+      h('button', { class: 'btn btn-sm btn-danger', text: '删除', onClick: (e) => { e.stopPropagation(); openDeleteDialog(r, { onDone: () => render() }); } }),
     ]) },
   ], cards, { empty: filter.q || filter.category !== 'all' ? '没有符合筛选条件的项目。' : '暂无项目。' });
 }
@@ -215,34 +215,6 @@ export async function openProjectSettings(cardData) {
       value: c.key, text: c.label, selected: c.key === cardData.category && !!cardData.categoryManual,
     })),
   ]);
-  const confirmInput = h('input', { class: 'input', placeholder: '输入 DELETE 以确认（只删除记录）', 'aria-label': '删除确认' });
-  const status = h('div', { class: 'small muted' });
-  let purgeSource = false;
-  let assessment = null;
-
-  const assessBox = h('div', { class: 'small muted' });
-  const purgeWarning = h('div', { class: 'danger-note', text: '勾选后将永久删除该目录及其全部文件，无法恢复。请确认你另有备份。' });
-  purgeWarning.style.display = 'none';
-  const loadAssessment = async () => {
-    assessBox.textContent = '正在检查源目录…';
-    try {
-      assessment = await api.deletionAssessment(cardData.id);
-      assessBox.textContent = assessment.ok
-        ? `源目录：${assessment.display} · ${assessment.fileCount} 个文件 · ${assessment.humanSize}${assessment.truncatedStats ? '（统计已达上限）' : ''}`
-        : `源目录不可删除：${assessment.reason}`;
-      // The server's token is the real folder name, which is not the display name — it asks for
-      // whatever actually unlocks the delete.
-      if (purgeSource) {
-        confirmInput.placeholder = assessment.ok
-          ? `输入「${assessment.confirmToken}」以确认彻底删除`
-          : '当前源目录不允许彻底删除';
-      }
-    } catch (err) {
-      assessment = null;
-      assessBox.textContent = `无法评估源目录：${err.message}`;
-    }
-  };
-
   const dlg = modal(`项目整理 — ${cardData.name}`, h('div', { class: 'stack' }, [
     h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '工作区路径（绝对路径）' }), pathInput, pathHint]),
     h('div', { class: 'stack-sm' }, [h('label', { class: 'small muted', text: '显示名称' }), nameInput]),
@@ -280,57 +252,13 @@ export async function openProjectSettings(cardData) {
     h('hr', { class: 'hr' }),
     h('div', { class: 'stack-sm' }, [
       h('strong', { class: 'small', text: '删除项目' }),
-      h('label', { class: 'row small', style: { alignItems: 'center', gap: '7px' } }, [
-        h('input', {
-          type: 'checkbox',
-          class: 'chk',
-          onChange: (e) => {
-            purgeSource = e.target.checked;
-            purgeWarning.style.display = purgeSource ? '' : 'none';
-            // The token differs by mode — DELETE for a record-only delete, the project name for
-            // a purge — so the placeholder must state the one that actually works.
-            confirmInput.placeholder = purgeSource ? '正在读取源目录的确认口令…' : '输入 DELETE 以确认（只删除记录）';
-            confirmInput.value = '';
-            if (purgeSource && !assessment) loadAssessment();
-          },
-        }),
-        h('span', { text: '同时删除电脑上的项目源文件（不可恢复）' }),
-      ]),
-      assessBox,
-      h('div', { class: 'small muted', text: '不勾选时只删除 Commander 的记录，源码目录保持不变。' }),
-      purgeWarning,
-      confirmInput,
-      h('button', {
-        class: 'btn btn-danger',
-        text: '删除',
-        onClick: async () => {
-          const typed = confirmInput.value.trim();
-          if (!purgeSource && typed !== 'DELETE') { status.textContent = '请输入 DELETE 以确认。'; return; }
-          if (purgeSource) {
-            const token = assessment && assessment.confirmToken;
-            if (!token) { status.textContent = assessment && assessment.reason ? `不能清除源目录：${assessment.reason}` : '源目录信息还在载入，请稍候再点删除。'; return; }
-            if (typed !== token) {
-              status.textContent = `彻底删除需要输入「${token}」—— 这是磁盘上真实的目录名。`;
-              return;
-            }
-          }
-          try {
-            const res = purgeSource
-              ? await api.deleteProjectWithSource(cardData.id, assessment.confirmToken)
-              : await api.deleteProject(cardData.id);
-            if (purgeSource) {
-              toast(`已删除记录并清除源文件：${res.sourcePurged.path}（${res.sourcePurged.fileCount} 个文件）`, 'ok', 9000);
-            } else {
-              toast(`记录已删除，源码目录未动：${res.sourceDirectoryUntouched}`, 'ok', 8000);
-            }
-            dlg.close();
-            await refreshShellData();
-            Router.go('/projects');
-          } catch (err) { status.textContent = `删除失败：${err.message}`; }
-        },
-      }),
+      h('div', { class: 'small muted', text: '从 Commander 移除记录即可，磁盘上的目录不会被改动；要连源码一起删，在删除对话框里另有入口。' }),
+      h('div', { class: 'row' }, [h('button', {
+        class: 'btn btn-sm btn-danger',
+        text: '删除这个项目',
+        onClick: () => { dlg.close(); openDeleteDialog(cardData, { onDone: () => render() }); },
+      })]),
     ]),
-    status,
   ]));
 }
 
