@@ -230,3 +230,11 @@ boot().catch((err) => {
     h('div', { class: 'evidence', text: '请确认 API 服务已启动（npm run dev），然后刷新页面。' }),
   ]));
 });
+
+// 兜底拖拽：app-region 不可用时，topbar/品牌行 mousedown 触发原生移动。
+document.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  if (!(window.chrome && window.chrome.webview)) return;
+  if (e.target.closest('button, a, input, select, kbd')) return;
+  if (e.target.closest('.brand, #topbar')) window.chrome.webview.postMessage('window:drag-start');
+});

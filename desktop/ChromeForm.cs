@@ -97,7 +97,25 @@ namespace AIProjectCommander.Desktop
             if (msg == "window:minimize") WindowState = FormWindowState.Minimized;
             else if (msg == "window:toggle-maximize") ToggleMaximize();
             else if (msg == "window:close") Close();
+            else if (msg == "window:drag-start") BeginNativeDrag();
         }
+
+        // 兜底拖拽：app-region 不可用时，网页 mousedown 直接发起系统级移动循环。
+        void BeginNativeDrag()
+        {
+            try
+            {
+                ReleaseCapture();
+                SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero);
+            }
+            catch { }
+        }
+
+        [DllImport("user32.dll")]
+        static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         void ToggleMaximize()
         {
