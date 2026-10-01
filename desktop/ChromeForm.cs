@@ -56,6 +56,13 @@ namespace AIProjectCommander.Desktop
             catch { return false; }
         }
 
+        public void ShowAndFocus()
+        {
+            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            Show();
+            Activate();
+        }
+
         // 配置 WebView2:启用非客户区支持(app-region 生效),接线网页三键消息
         public void ConfigureWebView(string url, string userDataFolder)
         {
