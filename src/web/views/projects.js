@@ -4,6 +4,7 @@ import { setTopbar, refreshShellData, state } from '../app.js';
 import { Router } from '../router.js';
 import { renderImportPanel } from './dropzone.js';
 import { openImportDialog } from './import.js';
+import { openDeleteDialog } from './delete-dialog.js';
 
 export async function render() {
   setTopbar('项目', '注册本地工作区——分析过程只读，删除需要你明确确认。', [
@@ -139,6 +140,7 @@ function projectTable(cards) {
     { label: '操作', render: (r) => h('div', { class: 'row' }, [
       h('button', { class: 'btn btn-sm', text: '扫描', onClick: (e) => { e.stopPropagation(); scan(r.id); } }),
       h('button', { class: 'btn btn-sm', text: '整理', onClick: (e) => { e.stopPropagation(); openProjectSettings(r); } }),
+      h('button', { class: 'btn btn-sm btn-danger', text: '删除', onClick: (e) => { e.stopPropagation(); openDeleteDialog(r); } }),
     ]) },
   ], cards, { empty: filter.q || filter.category !== 'all' ? '没有符合筛选条件的项目。' : '暂无项目。' });
 }

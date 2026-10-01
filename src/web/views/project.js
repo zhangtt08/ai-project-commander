@@ -6,6 +6,7 @@ import {
 } from '../ui.js';
 import { setTopbar, refreshShellData, state } from '../app.js';
 import { Router } from '../router.js';
+import { openDeleteDialog } from './delete-dialog.js';
 
 /**
  * Five tabs instead of fifteen. The panels did not change — they are grouped by what a person
@@ -68,6 +69,8 @@ export async function render(projectId, tab = 'overview') {
       title: '重新读取这个目录：扫描文件、跑构建与测试、更新识别与建议',
       onClick: () => runScan('full'),
     }),
+    // Deletion belongs where the project is open, not three clicks away in a settings tab.
+    h('button', { class: 'btn btn-danger', text: '删除项目', onClick: () => openDeleteDialog(cardData) }),
   ]);
 
   const tabsBar = h('div', { class: 'tabs', role: 'tablist' }, TABS.map((t) => h('button', {
