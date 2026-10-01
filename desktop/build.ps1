@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 $desk = $PSScriptRoot
 $exe  = Join-Path $desk 'AIProjectCommander.exe'
 $ico  = Join-Path $desk 'icons\app.ico'
-$src  = Join-Path $desk 'Commander.cs'
+$src  = @((Join-Path $desk 'Commander.cs'), (Join-Path $desk 'ChromeForm.cs'))
 
 # --- 1. locate csc.exe (Framework64 first, Framework32 as a fallback) ---
 $cscCandidates = @(
@@ -59,9 +59,11 @@ $cscArgs = @(
   '/reference:System.Windows.Forms.dll',
   '/reference:System.Drawing.dll',
   '/reference:System.Management.dll',
-  "/out:$exe",
-  $src
+  '/reference:vendor\pkg\lib\net462\Microsoft.Web.WebView2.Core.dll',
+  '/reference:vendor\pkg\lib\net462\Microsoft.Web.WebView2.WinForms.dll',
+  "/out:$exe"
 )
+$cscArgs += $src
 
 Write-Host 'compiling...'
 & $csc $cscArgs

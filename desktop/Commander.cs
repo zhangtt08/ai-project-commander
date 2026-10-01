@@ -27,6 +27,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 
 // Explorer / taskbar file properties ("AI Project Commander" instead of the file name).
 [assembly: AssemblyTitle("AI Project Commander")]
@@ -817,6 +819,7 @@ namespace AIProjectCommander.Desktop
         ToolStripMenuItem statusItem;
         ToolStripMenuItem stopItem;
         SplashForm splash;
+        ChromeForm appForm;
         System.Windows.Forms.Timer pump;
         EventWaitHandle showSignal;
         EventWaitHandle exitSignal;
@@ -1076,10 +1079,10 @@ namespace AIProjectCommander.Desktop
 
         void OpenOrFocus()
         {
-            IntPtr hWnd = EdgeWindow.Find();
-            if (hWnd != IntPtr.Zero)
+            // 自绘标题栏窗口（WebView2 壳）：优先走它，最小化时恢复而不是开新窗。
+            if (appForm != null && !appForm.IsDisposed)
             {
-                EdgeWindow.Focus(hWnd);
+                appForm.ShowAndFocus();
                 return;
             }
             try
@@ -1091,16 +1094,37 @@ namespace AIProjectCommander.Desktop
                     phase = PhaseFailed;
                     return;
                 }
-                using (Process proc = EdgeWindow.Open(server.Url, cfg.BrowserProfileDir))
-                {
-                    if (proc != null) proc.Dispose();
-                }
+                appForm = new ChromeForm("AI Project Commander", appIcon);
+                appForm.Size = new Size(1440, 900);
+                appForm.MinimumSize = new Size(900, 600);
+                appForm.StartPosition = FormStartPosition.CenterScreen;
+                appForm.FormClosed += delegate { if (appForm != null && appForm.IsDisposed) appForm = null; };
+                appForm.AttachWebView(server.Url, cfg.BrowserProfileDir);
+                appForm.Show();
             }
             catch (Exception ex)
             {
-                Log.Write("open window failed: " + ex);
-                failure = "无法打开应用窗口：" + ex.Message;
-                phase = PhaseFailed;
+                // WebView2 不可用时退回 Edge --app 窗口（保留原降级路径）。
+                Log.Write("webview2 shell failed, falling back to edge: " + ex);
+                try
+                {
+                    IntPtr hWnd = EdgeWindow.Find();
+                    if (hWnd != IntPtr.Zero)
+                    {
+                        EdgeWindow.Focus(hWnd);
+                        return;
+                    }
+                    using (Process proc = EdgeWindow.Open(server.Url, cfg.BrowserProfileDir))
+                    {
+                        if (proc != null) proc.Dispose();
+                    }
+                }
+                catch (Exception ex2)
+                {
+                    Log.Write("open window failed: " + ex2);
+                    failure = "无法打开应用窗口：" + ex2.Message;
+                    phase = PhaseFailed;
+                }
             }
         }
 
