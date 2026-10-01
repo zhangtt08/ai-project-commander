@@ -74,6 +74,13 @@ if (-not (Test-Path -LiteralPath $exe)) { throw "compiler reported success but $
 $item = Get-Item -LiteralPath $exe
 Write-Host ("built    : {0} ({1:N0} bytes, {2})" -f $item.FullName, $item.Length, $item.LastWriteTime)
 
+# --- 3.5 WebView2 程序集必须与 exe 同目录，否则运行时 FileNotFound 降级回 Edge ---
+$vendorBin = Join-Path $desk 'vendor\pkg'
+Copy-Item -LiteralPath (Join-Path $vendorBin 'lib\net462\Microsoft.Web.WebView2.Core.dll') -Destination $desk -Force
+Copy-Item -LiteralPath (Join-Path $vendorBin 'lib\net462\Microsoft.Web.WebView2.WinForms.dll') -Destination $desk -Force
+Copy-Item -LiteralPath (Join-Path $vendorBin 'runtimes\win-x64\native\WebView2Loader.dll') -Destination $desk -Force
+Write-Host 'webview2 : Core/WinForms/Loader dll copied next to exe'
+
 # --- 4. prove the icon actually landed in the PE resources ---
 Add-Type -AssemblyName System.Drawing
 $iconFromExe = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
