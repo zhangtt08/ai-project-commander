@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { h, card, table, mountAsync, healthBadge, statusBadge, gateBadge, toast, modal, projectStatusLabel, sameLocalPath, errorText } from '../ui.js';
+import { h, card, table, mountAsync, healthBadge, statusBadge, gateBadge, toast, modal, sameLocalPath, errorText } from '../ui.js';
 import { setTopbar, refreshShellData, state } from '../app.js';
 import { Router } from '../router.js';
 import { renderImportPanel } from './dropzone.js';
@@ -111,18 +111,31 @@ function sectionsFor(cards) {
 }
 
 function projectTable(cards) {
+  // Twelve columns meant nobody could read the row they cared about. The list answers
+  // "which project, what kind, is it ok, what needs me"; the rest lives on the project page.
   return table([
-    { label: '项目', render: (r) => h('div', {}, [h('a', { href: `#/projects/${r.id}`, text: r.name }), r.isDemo ? h('span', { class: 'chip', style: { marginLeft: '6px' }, text: '演示' }) : null, h('div', { class: 'path', text: r.workspacePath })]) },
+    {
+      label: '项目',
+      render: (r) => h('div', {}, [
+        h('a', { href: `#/projects/${r.id}`, text: r.name }),
+        r.isDemo ? h('span', { class: 'chip', style: { marginLeft: '6px' }, text: '演示' }) : null,
+        h('div', { class: 'path', text: r.workspacePath }),
+        h('div', { class: 'small muted', text: [
+          `${r.primaryLanguage || '?'} / ${r.framework === 'unknown' ? '—' : r.framework || '?'}`,
+          r.currentStage ? `阶段 ${r.currentStage}` : null,
+          r.progress && r.progress.percent !== null ? `进度 ${r.progress.percent}%` : '进度未知',
+        ].filter(Boolean).join(' · ') }),
+      ]),
+    },
     { label: '分类', render: (r) => h('span', { class: 'chip', title: r.categoryManual ? '手动指定' : '自动识别', text: r.categoryLabel || '未分类' }) },
     { label: '健康', render: (r) => (r.workspaceMissing ? h('span', { class: 'badge badge-critical', title: r.workspacePath, text: '目录已丢失' }) : healthBadge(r.health)) },
-    { label: '状态', render: (r) => h('span', { class: 'chip', text: projectStatusLabel(r.status) }) },
-    { label: '阶段', render: (r) => r.currentStage || '—' },
-    { label: '进度', render: (r) => (r.progress && r.progress.percent !== null ? `${r.progress.percent}%` : '未知'), num: true },
-    { label: '构建', render: (r) => (r.build ? statusBadge(r.build.status) : '—') },
-    { label: '测试', render: (r) => h('span', { class: 'small mono', text: [r.unit ? `u ${r.unit.passed}/${r.unit.total}` : null, r.e2e ? `e2e ${r.e2e.passed}/${r.e2e.total}` : null].filter(Boolean).join(' · ') || '—' }) },
-    { label: '验收门', render: (r) => gateBadge(r.gate) },
+    { label: '验证', render: (r) => h('div', { class: 'row wrap' }, [
+      r.build ? statusBadge(r.build.status) : null,
+      r.unit ? h('span', { class: 'small mono', text: `u ${r.unit.passed}/${r.unit.total}` }) : null,
+      r.gate ? gateBadge(r.gate) : null,
+      !r.build && !r.unit && !r.gate ? h('span', { class: 'small muted', text: '尚未运行' }) : null,
+    ]) },
     { label: '建议', render: (r) => (r.suggestionCount ? h('a', { class: 'badge badge-unknown', href: `#/projects/${r.id}/suggestions`, title: r.suggestionSummary && r.suggestionSummary.top[0] ? r.suggestionSummary.top[0] : '', text: `${r.suggestionCount} 条` }) : '—') },
-    { label: '技术栈', render: (r) => h('span', { class: 'small', text: `${r.primaryLanguage || '?'} / ${r.framework === 'unknown' ? '—' : r.framework || '?'}` }) },
     { label: '操作', render: (r) => h('div', { class: 'row' }, [
       h('button', { class: 'btn btn-sm', text: '扫描', onClick: (e) => { e.stopPropagation(); scan(r.id); } }),
       h('button', { class: 'btn btn-sm', text: '整理', onClick: (e) => { e.stopPropagation(); openProjectSettings(r); } }),
@@ -259,25 +272,8 @@ export async function openProjectSettings(cardData) {
           } catch (err) { toast(errorText(err), 'error'); }
         },
       }),
-      h('button', {
-        class: 'btn',
-        text: cardData.watchPaused ? '恢复监控' : '暂停监控',
-        onClick: async () => {
-          try {
-            if (cardData.watchPaused) await api.resumeWatch(cardData.id); else await api.pauseWatch(cardData.id);
-            toast('监控状态已更新', 'ok');
-            dlg.close();
-            render();
-          } catch (err) { toast(err.message, 'error'); }
-        },
-      }),
-      h('button', {
-        class: 'btn',
-        text: '归档',
-        onClick: async () => {
-          try { await api.archiveProject(cardData.id); toast('已归档', 'ok'); dlg.close(); await refreshShellData(); render(); } catch (err) { toast(err.message, 'error'); }
-        },
-      }),
+      // 暂停监控 / 归档 live in the project's own 设置 panel — one place per action.
+      h('a', { class: 'small', href: `#/projects/${cardData.id}/settings`, text: '打开项目设置 →' }),
     ]),
     h('hr', { class: 'hr' }),
     h('div', { class: 'stack-sm' }, [

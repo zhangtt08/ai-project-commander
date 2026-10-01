@@ -2,6 +2,17 @@ import { api } from '../api.js';
 import { h, card, table, mountAsync, toast } from '../ui.js';
 import { setTopbar, refreshShellData } from '../app.js';
 
+/**
+ * 分析队列 / 全局时间线 / 安全模型 left the sidebar so the first screen has five entries
+ * instead of nine. This bar is their one home, shown on each of the four pages.
+ */
+export function systemSections(active) {
+  const items = [['/settings', '设置'], ['/jobs', '分析队列'], ['/events', '全局时间线'], ['/security', '安全模型']];
+  return h('div', { class: 'row wrap' }, items.map(([path, label]) => h('a', {
+    class: `chip${active === path ? ' chip-ok' : ''}`, href: `#${path}`, text: label,
+  })));
+}
+
 export async function render() {
   setTopbar('设置', 'AI 服务、监控与扫描限制。密钥只保存在服务端。', [
     h('button', { class: 'btn', text: '刷新', onClick: () => render() }),
@@ -136,6 +147,7 @@ export async function render() {
     ]));
 
     return h('div', { class: 'stack' }, [
+      systemSections('/settings'),
       providerCard,
       githubCard,
       watcherCard,
@@ -150,6 +162,7 @@ export async function renderSecurity() {
   setTopbar('安全模型', 'Commander 允许做什么——以及结构上被禁止做什么。');
   const view = document.getElementById('view');
   await mountAsync(view, () => api.security(), (s) => h('div', { class: 'stack' }, [
+    systemSections('/security'),
     card('敏感文件保护', h('div', { class: 'stack-sm' }, [
       h('p', { class: 'small', text: s.sensitiveFiles.policy }),
       h('h3', { class: 'small', text: `匹配模式（${(s.sensitiveFiles.patterns || []).length} 条，取自实际生效的规则）` }),

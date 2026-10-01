@@ -68,6 +68,13 @@ export function renderNav() {
       count ? h('span', { class: 'count', text: String(count) }) : null,
     ]));
   }
+  // Operational pages that no longer deserve a sidebar row stay reachable from one quiet place.
+  nav.appendChild(h('div', { class: 'nav-more' }, [
+    h('div', { class: 'nav-group', text: '系统' }),
+    ...[['/jobs', '分析队列'], ['/events', '全局时间线'], ['/security', '安全模型']].map(([p, l]) => h('a', {
+      class: 'nav-sub', href: `#${p}`, text: l,
+    })),
+  ]));
 }
 
 export function applyTheme(theme) {

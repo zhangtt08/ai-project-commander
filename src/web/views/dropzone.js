@@ -65,7 +65,11 @@ export function renderImportPanel({ onAdded = null, compact = false } = {}) {
     h('div', { class: 'dz-icon' }, [h('span', { class: 'arrow' }), h('span', { class: 'tray' })]),
     h('h3', { text: '把项目文件夹拖到这里' }),
     h('p', { text: '从资源管理器拖入文件夹 —— Commander 会在磁盘上定位它并识别技术栈后再导入。全程不修改任何文件。' }),
-    h('div', { class: 'dz-actions' }, [
+    h('div', { class: 'dz-actions' }, compact ? [
+      // With projects already listed the buttons duplicate 「+ 添加项目」; what is worth saying
+      // here is only that dragging works.
+      h('span', { class: 'kbd', text: '把项目文件夹从资源管理器拖进来即可导入' }),
+    ] : [
       h('button', { class: 'btn btn-sm', text: '浏览并选择文件夹…', onClick: (e) => { e.stopPropagation(); picker.click(); } }),
       h('button', { class: 'btn btn-sm btn-ghost', text: '改为粘贴路径', onClick: (e) => { e.stopPropagation(); openAddDialog(); } }),
       h('span', { class: 'kbd', text: 'or drop it anywhere on this panel' }),
