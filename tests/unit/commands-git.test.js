@@ -6,7 +6,7 @@ import path from 'node:path';
 import { classifyCommand, CommandRunner, describeSecurityModel, DANGEROUS_BINARIES, resolveInvocation } from '../../src/core/command-runner.js';
 import { GitAnalyzer, gitSummaryLine } from '../../src/core/git-analyzer.js';
 import { parseTestOutput, stripAnsi } from '../../src/core/test-parser.js';
-import { detectCommand, detectAllCommands } from '../../src/core/build-detect.js';
+import { detectCommand, detectAllCommands, parseCommandLine } from '../../src/core/build-detect.js';
 import { parsePorcelainSafe } from './helpers/porcelain.js';
 import { createFixtureProject, applyRegression, initGitRepo } from '../../src/demo/fixture-factory.js';
 import { makeTempDir } from '../helpers/tmp.js';
@@ -276,6 +276,35 @@ describe('build command detection', () => {
     const base = { packageJson: { scripts: { build: 'x' } }, frameworks: [], configFiles: {}, directories: {} };
     assert.equal(detectCommand({ ...base, packageManager: 'pnpm' }, 'build').display, 'pnpm run build');
     assert.equal(detectCommand({ ...base, packageManager: 'yarn' }, 'build').display, 'yarn run build');
+  });
+
+  test('a hand-pinned command wins over detection', () => {
+    const metadata = {
+      packageJson: { scripts: { build: 'vite build' } }, packageManager: 'npm',
+      frameworks: [], configFiles: {}, directories: {},
+      manualCommands: { build: 'npm run custom:build' },
+    };
+    const r = detectCommand(metadata, 'build');
+    assert.equal(r.unsupported, false);
+    assert.equal(r.source, 'manual');
+    assert.equal(r.display, 'npm run custom:build');
+    assert.deepEqual(r.args, ['run', 'custom:build']);
+    // kinds without a pin still auto-detect
+    assert.equal(detectCommand(metadata, 'test').unsupported, true);
+  });
+
+  test('a pin rescues a kind nothing could detect', () => {
+    const metadata = { packageJson: { scripts: {} }, packageManager: 'unknown', frameworks: [], configFiles: {}, directories: {}, manualCommands: { build: 'make all' } };
+    const r = detectCommand(metadata, 'build');
+    assert.equal(r.unsupported, false);
+    assert.equal(r.command, 'make');
+    assert.deepEqual(r.args, ['all']);
+  });
+
+  test('parseCommandLine is quote-aware and splits without a shell', () => {
+    assert.deepEqual(parseCommandLine('npm run build'), { command: 'npm', args: ['run', 'build'] });
+    assert.deepEqual(parseCommandLine('node "scripts/my build.js" --x'), { command: 'node', args: ['scripts/my build.js', '--x'] });
+    assert.equal(parseCommandLine('   '), null);
   });
 });
 

@@ -28,6 +28,48 @@ function pick(scripts, aliases) {
   return null;
 }
 
+/** Command kinds a user may pin by hand, in the order the UI shows them. */
+export const MANUAL_COMMAND_KINDS = ['build', 'lint', 'typecheck', 'test', 'integrationTest', 'e2e'];
+
+/**
+ * Split a command line the user typed into bin + args. Quote-aware but with NO shell
+ * expansion — the process is spawned with shell:false downstream, and CommandRunner still
+ * runs every token through its allowlist before anything executes.
+ */
+export function parseCommandLine(str) {
+  const s = String(str || '').trim();
+  if (!s) return null;
+  const tokens = [];
+  let cur = '';
+  let quote = null;
+  for (const ch of s) {
+    if (quote) { if (ch === quote) quote = null; else cur += ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (/\s/.test(ch)) { if (cur) { tokens.push(cur); cur = ''; } continue; }
+    cur += ch;
+  }
+  if (cur) tokens.push(cur);
+  if (!tokens.length) return null;
+  return { command: tokens[0], args: tokens.slice(1) };
+}
+
+/** A hand-pinned command always wins over detection; the allowlist still gates execution. */
+function manualEntry(metadata, kind) {
+  const raw = metadata && metadata.manualCommands && metadata.manualCommands[kind];
+  if (!raw || !String(raw).trim()) return null;
+  const parsed = parseCommandLine(raw);
+  if (!parsed) return null;
+  return {
+    kind,
+    source: 'manual',
+    script: null,
+    command: parsed.command,
+    args: parsed.args,
+    display: `${parsed.command} ${parsed.args.join(' ')}`.trim(),
+    unsupported: false,
+  };
+}
+
 /**
  * @param {object} metadata ProjectScanner output
  * @returns {{kind:string, command:string, args:string[], script:string, display:string, source:string} | {kind:string, unsupported:true, reason:string}}
@@ -36,6 +78,9 @@ export function detectCommand(metadata, kind) {
   const scripts = (metadata && metadata.packageJson && metadata.packageJson.scripts) || {};
   const pm = (metadata && metadata.packageManager) || 'unknown';
   const runner = RUNNERS[pm] || RUNNERS.npm;
+
+  const manual = manualEntry(metadata, kind);
+  if (manual) return manual;
 
   const aliases = SCRIPT_ALIASES[kind];
   if (!aliases) return { kind, unsupported: true, reason: `unknown command kind: ${kind}` };
@@ -92,6 +137,7 @@ export function detectedCommandSummary(commands) {
     display: v.unsupported ? null : v.display,
     reason: v.unsupported ? v.reason : null,
     source: v.source || null,
+    manual: v.source === 'manual',
   }));
 }
 

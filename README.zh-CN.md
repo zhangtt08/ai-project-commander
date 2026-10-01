@@ -46,15 +46,17 @@ Commander 管理的是 Codex、Claude Code、Cursor、Gemini CLI 等 coding agen
 
 | 领域 | 你得到什么 |
 | --- | --- |
-| 仪表盘 | 真实计数（健康 / 警告 / 危急 / 阻塞）+ 每个项目卡片带实时构建、单测、e2e、git、验收门与进度数据 |
-| 关注中心 | 危急健康、构建失败、失败测试套件、回归、阻塞任务、脏工作区、规格漂移、待审提示词 |
-| 项目详情 | 14 个标签页：总览 · 阶段 · 任务 · 测试 · 构建 · Git · 变更 · 提示词 · Agent 会话 · 风险 · 记忆 · 决策 · 时间线 · 设置 |
+| 仪表盘（决策视图） | 打开就是**现在需要动手的项目**：每个只给一个主动作，直接跳到那条已核实的原因（构建失败 / 测试不通过 / 回归 / 目录丢失…）；其余项目折叠成紧凑清单，仍一次点击可达——不删路由、不藏数据。顶部是真实计数（健康 / 警告 / 危急 / 阻塞 / 需要动手） |
+| 关注中心 | 危急健康、构建失败、失败测试套件、回归、阻塞任务、脏工作区、规格漂移、待审提示词，按严重度排序的完整队列 |
+| 项目详情 | 5 个分组标签页：概况 · 任务与阶段 · 质量与验证 · AI 记录 · 设置（旧的深链标签仍能直达，只是收进了对应分组） |
 | 验收门 | PASS / FAIL / BLOCKED / UNKNOWN，**每一项阻塞检查都有解释** |
 | 健康引擎 | healthy / warning / critical / unknown，附透明可查的"为什么"原因列表 |
 | 风险引擎 | 16 条确定性规则，每条带严重度、证据与建议动作 |
 | Issues | 在计算出的风险旁手工建 issue——计算 vs. 手工永远可区分 |
 | 回归检测 | 构建 PASS→FAIL、测试 PASS→FAIL、通过数下降、用例数下降、危急风险增加、文件删除、验收门回退 |
-| 任务台账 | 任务来自规格文件、markdown 复选框、TODO/FIXME 标记、agent 日志、手工录入与 AI——带来源与置信度 |
+| 任务台账 | 任务来自规格文件、markdown 复选框、TODO/FIXME 标记、agent 日志、手工录入与 AI——每条注明它的来源 |
+| 后台分析队列 | 会跑真实构建/测试的扫描入队执行：有界并发、逐任务超时、自动重试与取消；队列页有任务运行时每 2.5 秒自动刷新，并显示已运行时长与其上限 |
+| 命令补充 | 某一类构建/测试/类型检查命令没自动检测到时，在项目总览里直接补一条并单独运行它；补进去的命令仍走同一套命令白名单，绕不过安全模型 |
 | 项目记忆 | 版本化、只追加的项目记忆，可渲染为提示词与交接材料 |
 | 下一步行动 | 确定性 12 规则决策链；LLM 只能改措辞，不能改选择 |
 | 提示词生成 | 十个必备段落，即使 Provider 漏写也保证齐全 |
@@ -78,13 +80,30 @@ API 层         src/server/**   零依赖 HTTP 路由
 
 **确定性优先，LLM 其次。** Git 状态、文件存在性、构建结果、测试数量、包管理器与进度全部由确定性代码计算。AI Provider 只做总结、解释与建议——每条 AI 响应都经过 schema 校验，失败重试一次，然后回退到确定性的 mock（UI 中**明确标注为 mock**）。
 
+## API 概览
+
+所有 `/api/*` 成功响应都包成 `{ "data": … }`，失败返回 `{ "error": { code, message, hint } }` 并带 HTTP 状态码；content-type 恒为 `application/json`。契约稳定，前端与 coding agent 都直接消费它。
+
+| 领域 | 端点 |
+|---|---|
+| 健康 / 元信息 | `GET /api/health` · `GET /api/system` · `GET /api/security` · `GET /api/meta` |
+| 聚合 | `GET /api/dashboard`（计数 + 卡片）· `GET /api/attention`（按严重度）· `GET /api/search?q=` |
+| 项目 | `GET/POST /api/projects` · `GET/PATCH/DELETE /api/projects/{id}` · `GET /api/projects/{id}/detail` · `GET /api/projects/{id}/suggestions` · archive / unarchive / pause-watch / resume-watch |
+| 命令 | `POST /api/projects/{id}/commands`（补 build/test/typecheck 命令）· `POST /api/projects/{id}/commands/run`（经队列单独跑一类命令） |
+| 扫描 / 队列 | `POST /api/projects/{id}/scan` · `POST /api/projects/{id}/scan-sync` · `GET /api/jobs` · `GET /api/jobs/stats` · `POST /api/jobs/{id}/cancel` |
+| 证据 | `/api/projects/{id}/` 下 `tests` · `builds` · `git` · `changes` · `snapshots` · `risks` · `regressions` · `issues` · `stages` · `tasks` · `memory` · `decisions` · `timeline` |
+| 下一步 / agent | `GET/POST /api/projects/{id}/next-action` · `GET/POST /api/projects/{id}/prompts` · `GET /api/projects/{id}/handoff` · `POST /api/projects/{id}/handoff/export` · 会话导入 |
+| 发现 / 导入 | `GET /api/discovery` · `POST /api/discovery/import` · `POST /api/workspaces/resolve` |
+| GitHub | `POST /api/projects/{id}/github/publish` · `POST /api/github/verify` · `GET /api/github/remote/repos` · `GET /api/github/remote/repo` |
+| 设置 / AI | `GET/PATCH /api/settings` · `POST /api/projects/{id}/ai/{summary,risks,tasks,drift,enrich}` |
+
 ## 技术栈
 
 - **运行时**：Node.js ≥ 22.5（使用内置 `node:sqlite`——无原生模块）
 - **后端**：零依赖 HTTP server，ESM
 - **数据库**：SQLite（WAL、外键、版本化迁移、可用时启用 FTS5）
 - **前端**：原生 ES modules + 手写 CSS（Linear 风格亮色主题）
-- **测试**：`node:test`（133 单测 + 40 集成），Playwright/Chromium e2e（16 步）
+- **测试**：`node:test`（240 单测 + 77 集成 = 317），Playwright/Chromium e2e（本机未执行）
 - **包管理**：npm——**零运行时依赖**，`npm install` 瞬间完成且完全离线
 
 ## 快速开始
@@ -96,14 +115,15 @@ API 层         src/server/**   零依赖 HTTP 路由
 **Windows 脚本方式**：双击根目录的 `启动.bat`。若 exe 尚未构建，它会自动退回"启动服务 +
 打开浏览器"的方式，并提示如何构建 exe。
 
-命令行方式：
+命令行方式（零依赖，无需 `npm install`）：
 
 ```bash
 git clone https://github.com/zhangtt08/ai-project-commander.git
 cd ai-project-commander
-npm install        # no-op（零依赖）——仅为惯例保留
-npm run dev        # → http://127.0.0.1:8787（被占用时自动 +1，横幅会打印实际地址）
+node src/server/cli.js start   # → http://127.0.0.1:8787（被占用时自动 +1，横幅会打印实际地址）
 ```
+
+`npm run dev` / `npm run start` 是同一入口的别名；`npm install` 是空操作，仅为惯例保留。
 
 **首次启动不需要任何准备，也不会塞演示数据**：Commander 会扫描这台电脑（主目录、桌面、
 文档、source 以及 D:/E:/F: 盘），把真正的项目目录导入并完成分类与用途识别，通常 2 秒内
@@ -162,12 +182,12 @@ npm run seed:demo   # 遵守 COMMANDER_DATA_DIR；不设置就会写进真实数
 ```bash
 npm run dev            # 启动服务（PORT / COMMANDER_DATA_DIR 环境变量可覆盖）
 npm run build          # 静态构建检查：每个模块可解析、资源与 agent 记忆齐全
-npm run typecheck      # 全部 65 个文件的解析 + import/绑定解析
+npm run typecheck      # 全部源文件的解析 + import/绑定解析
 npm run lint           # 架构策略：child_process 只能在 CommandRunner、
                        # fs 写入只能在授权模块、无 eval、领域纯净
 npm test               # 单测 + 集成
-npm run test:unit      # 133 个单测（~8s）
-npm run test:integration  # 40 个集成测试（~40s，真实跑构建/测试）
+npm run test:unit      # 240 个单测
+npm run test:integration  # 77 个集成测试（真实跑构建/测试，~40s）
 npm run verify         # typecheck + lint + build + 单测 + 集成 一条命令
 ```
 
@@ -235,8 +255,8 @@ export OPENAI_BASE_URL=https://api.openai.com/v1   # 或 Ollama/vLLM/OpenRouter/
   另一台机器需要 Node 22+ 与 Edge。WebView2 的托管程序集此处缺失，npm registry 拉不动
   Electron，这是零依赖路线（ADR-001）。
 - **Playwright E2E 套件未在这台机器上执行过**——未安装 Chromium，且下载被拒绝。
-  270 个单测/集成测试通过，UI 通过驱动运行中的应用并截取真实窗口像素做了验证，
-  但 21 步 E2E 运行未验证。
+  317 个单测/集成测试通过；UI 通过对运行中服务的无头渲染截图 + 对服务端返回的 JS 模块与
+  `/api/*` JSON 包壳做断言做了验证，但 21 步 E2E 运行未在本机验证。
 - **GitHub 发布已对真实 GitHub 端到端验证**（2026-09-30）：导入一个项目在账号上创建了
   `private: true` 仓库并推送成功——通过从 GitHub API 回读仓库、文件清单与提交确认，
   不只是 Commander 自己的状态。所用凭据是本机 GitHub CLI 登录（`gh auth token`，

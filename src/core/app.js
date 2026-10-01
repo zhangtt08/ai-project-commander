@@ -225,6 +225,33 @@ export class App {
     return this.repo.update('projects', projectId, { ignore_patterns: patterns });
   }
 
+  /**
+   * Pin a build/test/typecheck command by hand when detection comes up empty — the one
+   * executable way out of "该项目没有配置 build 命令". Keys are the detect-command kinds;
+   * an empty/absent value clears that kind's override. The stored scanner metadata is updated
+   * in place so the detail summary reflects the pin immediately, without waiting for a rescan.
+   * Execution still flows through CommandRunner's allowlist, so a pinned command cannot bypass
+   * the safety model.
+   */
+  setManualCommands(projectId, commands) {
+    const project = this.getProject(projectId);
+    const allowed = ['build', 'lint', 'typecheck', 'test', 'integrationTest', 'e2e'];
+    const clean = {};
+    for (const k of allowed) {
+      const raw = commands && commands[k];
+      if (raw === undefined) continue;
+      const s = String(raw).trim().slice(0, 400);
+      if (s) clean[k] = s;
+    }
+    const meta = { ...(project.metadata || {}) };
+    meta.manualCommands = clean;
+    if (meta.metadata && typeof meta.metadata === 'object') {
+      meta.metadata = { ...meta.metadata, manualCommands: clean };
+    }
+    this.repo.update('projects', projectId, { metadata: meta });
+    return clean;
+  }
+
   /** Manual 分类 wins over inference until the user clears it back to auto. */
   setCategory(projectId, category) {
     if (category === null || category === '' || category === 'auto') {

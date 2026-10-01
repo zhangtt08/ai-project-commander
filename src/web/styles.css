@@ -496,6 +496,30 @@ code.inline { font-family: "Cascadia Code", Consolas, ui-monospace, monospace; f
 
 .alert-time { font-size: 11.5px; display: flex; align-items: center; gap: 4px; }
 
+/* ── 首页决策视图：一个需要动手的项目 = 一行 + 一个主动作 ── */
+.decision-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+  padding: 11px 13px;
+}
+.decision-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.decision-name { font-weight: 600; font-size: 13px; }
+.decision-row .btn { justify-self: end; white-space: nowrap; }
+.rest-details { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); padding: 0 14px; }
+.rest-details summary {
+  list-style: none; cursor: pointer; padding: 11px 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.rest-details summary::-webkit-details-marker { display: none; }
+.rest-summary-title { font-size: 12.5px; font-weight: 600; }
+.rest-list { display: flex; flex-direction: column; border-top: 1px solid var(--border); padding: 4px 0 12px; }
+.rest-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.rest-row:last-child { border-bottom: 0; }
+.rest-name { font-weight: 550; min-width: 120px; }
+.rest-row .small { margin-right: auto; }
+
 /* ── 桌面壳自绘标题栏：拖拽区 + 窗口三键（仅 WebView2 壳内生效）── */
 .brand,
 #topbar {

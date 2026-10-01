@@ -294,6 +294,46 @@ describe('project lifecycle over HTTP', () => {
   });
 });
 
+describe('manual command override', () => {
+  let id;
+
+  test('a pinned build command persists and shows as manual in detail', async () => {
+    const cmdDir = path.join(ROOT, 'cmd-fixture');
+    createFixtureProject(cmdDir, 'warning');
+    const add = await request('POST', '/api/projects', { workspacePath: cmdDir, name: 'cmd fixture' });
+    assert.equal(add.status, 200);
+    id = add.json.data.id;
+    const set = await request('POST', `/api/projects/${id}/commands`, { commands: { build: 'npm run build' } });
+    assert.equal(set.status, 200);
+    assert.equal(set.json.data.manualCommands.build, 'npm run build');
+
+    const detail = await request('GET', `/api/projects/${id}/detail`);
+    const row = detail.json.data.commands.find((c) => c.kind === 'build');
+    assert.ok(row, 'detail must list the build kind');
+    assert.equal(row.manual, true);
+    assert.equal(row.source, 'manual');
+    assert.equal(row.supported, true);
+  });
+
+  test('an unknown kind is rejected with a structured validation error', async () => {
+    const res = await request('POST', `/api/projects/${id}/commands/run`, { kind: 'rm -rf /' });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.error.code, 'validation_error');
+  });
+
+  test('a valid kind enqueues a run job; clearing the pin restores detection', async () => {
+    const run = await request('POST', `/api/projects/${id}/commands/run`, { kind: 'build' });
+    assert.equal(run.status, 200);
+    assert.match(run.json.data.jobId, /^job_/);
+
+    const clear = await request('PATCH', `/api/projects/${id}`, { commands: { build: '' } });
+    assert.equal(clear.status, 200);
+    const after = await request('GET', `/api/projects/${id}/detail`);
+    const row = after.json.data.commands.find((c) => c.kind === 'build');
+    assert.ok(!row.manual, 'cleared pin must fall back to auto-detection');
+  });
+});
+
 describe('static frontend', () => {
   test('the SPA shell is served', async () => {
     const res = await request('GET', '/');

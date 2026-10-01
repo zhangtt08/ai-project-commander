@@ -48,11 +48,14 @@ def dashboard(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
     expect(page.locator("h1")).to_contain_text("仪表盘", timeout=20000)
     expect(page.locator(".metric").filter(has_text="项目数").locator(".value")).to_have_text("3", timeout=20000)
-    expect(page.locator(".proj-card")).to_have_count(3)
-    expect(page.locator(".proj-card").filter(has_text="ShopFlow Web")).to_be_visible()
-    assert page.locator(".proj-card").filter(has_text="Legacy Billing").count() == 1
-    # The dashboard must show REAL data: a build badge and a gate badge on each card.
-    assert page.locator(".proj-card .badge").count() >= 3
+    # The decision view surfaces the two projects that need action now, each with one primary action.
+    assert page.locator(".decision-row").count() == 2, "two demo projects have critical/high attention"
+    body = page.inner_text("body")
+    assert "Legacy Billing" in body and "FitPlan Tracker" in body
+    assert page.locator(".decision-row .btn").count() == 2, "each decision row carries exactly one action"
+    # The healthy project is demoted but still one click away in the collapsed "其余" list.
+    page.locator(".rest-details summary").click()
+    expect(page.locator(".rest-row").filter(has_text="ShopFlow Web")).to_be_visible()
 
 
 @step("attention center lists the failing project first")
@@ -70,7 +73,7 @@ def attention(page):
 @step("project detail overview shows gate, health and next action")
 def overview(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
-    page.locator(".proj-card").filter(has_text="FitPlan Tracker").click()
+    page.locator(".decision-name").filter(has_text="FitPlan Tracker").click()
     page.wait_for_url(re.compile(r"#/projects/[^/]+$"), timeout=15000)
     expect(page.locator("h1")).to_contain_text("FitPlan Tracker", timeout=15000)
     page.wait_for_selector(".metric", timeout=15000)
@@ -84,16 +87,16 @@ def overview(page):
 
 @step("tests tab shows 22/25 e2e with failing cases")
 def tests_tab(page):
-    page.locator(".tab", has_text="测试").click()
+    page.locator(".tab", has_text="质量与验证").click()
     expect(page.locator("body")).to_contain_text("失败用例", timeout=15000)
     expect(page.locator("body")).to_contain_text("22/25", timeout=15000)
     expect(page.locator("body")).to_contain_text("generates a 7 day plan", timeout=15000)
-    assert page.locator("details summary", has_text="原始输出").count() >= 1
+    expect(page.locator("details summary").filter(has_text="原始输出").first).to_be_visible(timeout=15000)
 
 
 @step("risks tab lists deterministic risks with evidence")
 def risks_tab(page):
-    page.locator(".tab", has_text="风险").click()
+    page.locator(".tab", has_text="质量与验证").click()
     page.wait_for_selector(".risk-item", timeout=15000)
     expect(page.locator("body")).to_contain_text("TESTS_FAILED_E2E", timeout=15000)
     expect(page.locator("body")).to_contain_text("建议行动", timeout=15000)
@@ -113,7 +116,7 @@ def issues_tab(page):
 
 @step("tasks can be created and moved through the ledger")
 def tasks_tab(page):
-    page.locator(".tab", has_text="任务").click()
+    page.locator(".tab", has_text="任务与阶段").click()
     page.fill("input[aria-label='新任务标题']", "Fix double charge on checkout")
     page.locator("button:has-text('添加')").click()
     expect(page.locator("body")).to_contain_text("Fix double charge on checkout", timeout=15000)
@@ -124,12 +127,12 @@ def tasks_tab(page):
 
 @step("decisions and project memory versioning work")
 def decisions_memory(page):
-    page.locator(".tab", has_text="决策").click()
+    # decisions and memory both live in the grouped "AI 记录" tab
+    page.locator(".tab", has_text="AI 记录").click()
     page.fill("input[aria-label='决策标题']", "Use SQLite for all local state")
     page.fill("textarea[aria-label='决策']", "One embedded database, versioned migrations, no server.")
     page.locator("button:has-text('创建架构决策记录')").click()
     expect(page.locator("body")).to_contain_text("Use SQLite for all local state", timeout=15000)
-    page.locator(".tab", has_text="记忆").click()
     expect(page.locator("body")).to_contain_text("Project Memory v", timeout=15000)
     page.fill("input[aria-label='Memory note']", "note recorded by the e2e run")
     page.locator("button:has-text('创建新版本')").click()
@@ -139,7 +142,7 @@ def decisions_memory(page):
 
 @step("agent transcript import closes the prompt loop")
 def sessions_tab(page):
-    page.locator(".tab", has_text="Agent 会话").click()
+    page.locator(".tab", has_text="AI 记录").click()
     transcript = "$ npm test\nexit code 0\n$ npm run test:e2e\n  22 passed (18.4s)\n  3 failed\nexit code 1\nEdited file: src/planner/weekly.js\n"
     page.fill("textarea[aria-label='Transcript']", transcript)
     page.select_option("select[aria-label='提供方']", "claude_code")
@@ -152,17 +155,17 @@ def sessions_tab(page):
 @step("next action is rendered with priority and verification commands")
 def next_action(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
-    page.locator(".proj-card").filter(has_text="FitPlan Tracker").click()
+    page.locator(".decision-name").filter(has_text="FitPlan Tracker").click()
     page.wait_for_url(re.compile(r"#/projects/[^/]+$"), timeout=15000)
     page.wait_for_selector("text=下一步建议行动", timeout=15000)
     expect(page.locator("body")).to_contain_text("npm run test:e2e", timeout=15000)
-    page.locator(".tab", has_text="提示词").click()
+    page.locator(".tab", has_text="AI 记录").click()
     page.wait_for_selector("text=还没有生成提示词", timeout=15000)
 
 
 @step("prompt generation produces all ten sections")
 def generate_prompt(page):
-    page.locator(".tab", has_text="概述").click()
+    page.locator(".tab", has_text="概况").click()
     page.wait_for_selector("button:has-text('生成 Agent 提示词')", timeout=15000)
     page.locator("button:has-text('生成 Agent 提示词')").first.click()
     page.wait_for_selector(".modal", timeout=30000)
@@ -178,6 +181,7 @@ def generate_prompt(page):
 
 @step("handoff package opens with all sections")
 def handoff(page):
+    page.locator(".tab", has_text="AI 记录").click()
     page.locator("button:has-text('交接包')").click()
     page.wait_for_selector(".modal", timeout=30000)
     for section in ["Project Summary", "Architecture", "Current Stage", "Known Issues", "Next Action", "Verification"]:
@@ -210,7 +214,7 @@ def settings(page):
 @step("add-project dialog discovers real folders on this machine")
 def discovery(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
-    page.wait_for_selector(".proj-card", timeout=20000)
+    page.wait_for_selector(".decision-row", timeout=20000)
     page.locator("button:has-text('添加项目')").click()
     page.wait_for_selector(".modal", timeout=10000)
     expect(page.locator(".modal")).to_contain_text("扫描这台电脑", timeout=10000)
@@ -265,12 +269,12 @@ def categories(page):
 @step("project detail identifies purpose and lists evidence-backed suggestions")
 def suggestions(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
-    page.locator(".proj-card").filter(has_text="FitPlan Tracker").click()
-    page.locator(".tab", has_text="优化建议").click()
+    page.locator(".decision-name").filter(has_text="FitPlan Tracker").click()
+    page.locator(".tab", has_text="概况").click()
     page.wait_for_selector(".purpose-box", timeout=20000)
     body = page.locator(".purpose-box").inner_text()
     assert "分类" in body, "the identification card must state the category"
-    assert "置信度" in body, "the identification card must state how confident it is"
+    assert "分类依据" in body, "the identification card must expose the evidence behind the category"
     # suggestions exist and every one of them cites evidence — no advice without a source
     page.wait_for_selector(".sugg-item", timeout=20000)
     items = page.locator(".sugg-item")
@@ -301,7 +305,8 @@ def delete_preview(page):
     # The assessment either sizes the folder or explains why it refuses to touch it.
     # Demo fixtures live under Commander's own data dir, so a refusal is a valid answer —
     # what must never happen is silence.
-    expect(page.locator(".modal")).to_contain_text("源目录", timeout=15000)
+    # Wait for the async assessment to reach a terminal state, not the "正在检查源目录…" placeholder.
+    expect(page.locator(".modal")).to_contain_text(re.compile("个文件|不可清除|无法评估"), timeout=15000)
     assess = page.locator(".modal").inner_text()
     assert ("个文件" in assess) or ("不可清除" in assess) or ("无法评估" in assess), \
         "the assessment must report a size or a refusal reason"
@@ -309,10 +314,12 @@ def delete_preview(page):
     placeholder = page.locator(".modal input[aria-label='彻底删除确认']").get_attribute("placeholder") or ""
     assert ("输入「" in placeholder) or ("不允许彻底删除" in placeholder) or ("载入" in placeholder), \
         f"purge prompt must come from the assessment, got: {placeholder}"
-    # A wrong token is refused and nothing is deleted.
+    # A wrong token is refused and nothing is deleted. For demo fixtures that live under
+    # Commander's own data dir the server refuses the purge outright, so either the
+    # token-mismatch prompt or the refusal message is the correct, safe outcome.
     page.fill(".modal input[aria-label='彻底删除确认']", "not-the-token")
     page.locator(".modal button:has-text('永久删除记录与源文件')").click()
-    expect(modal).to_contain_text("请输入「", timeout=5000)
+    expect(modal).to_contain_text(re.compile("请输入「|不能清除源目录"), timeout=5000)
     rows_before = page.locator("tbody tr").count()
     page.locator(".modal button:has-text('取消')").click()
     expect(page.locator(".modal")).to_have_count(0, timeout=5000)
@@ -346,7 +353,7 @@ def topbar_search(page):
 @step("keyboard navigation works")
 def a11y(page):
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
-    page.wait_for_selector(".proj-card", timeout=20000)
+    page.wait_for_selector(".decision-row", timeout=20000)
     for _ in range(4):
         page.keyboard.press("/")
         try:
@@ -355,10 +362,10 @@ def a11y(page):
         except Exception:
             page.locator("body").focus()
     expect(page.locator("input[aria-label='Search query']")).to_be_focused(timeout=10000)
-    # every project card is keyboard reachable
+    # every actionable project row is keyboard reachable through its name link
     page.goto(BASE + "/#/", wait_until="domcontentloaded")
-    page.wait_for_selector(".proj-card", timeout=15000)
-    page.locator(".proj-card").first.focus()
+    page.wait_for_selector(".decision-name", timeout=15000)
+    page.locator(".decision-name").first.focus()
     page.keyboard.press("Enter")
     page.wait_for_url(re.compile(r"#/projects/.+"), timeout=10000)
 

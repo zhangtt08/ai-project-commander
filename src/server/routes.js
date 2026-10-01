@@ -1,7 +1,7 @@
 /** API surface. Handlers stay thin: validate → call the container → return data. */
 import { Router, requireParam, sendJson } from './http-server.js';
 import { ValidationError, NotFoundError } from '../domain/errors.js';
-import { JOB_TYPE } from '../domain/constants.js';
+import { JOB_TYPE, DEFAULT_SCAN_LIMITS } from '../domain/constants.js';
 import { ManualImportAdapter, MockAgentAdapter, ADAPTER_CATALOGUE } from '../core/agent-sessions.js';
 import { analyzeChanges } from '../core/analyzers/change-analyzer.js';
 import { detectedCommandSummary, detectAllCommands } from '../core/build-detect.js';
@@ -169,7 +169,44 @@ export function buildRouter(app) {
     if (body.description !== undefined) app.setDescription(params.id, String(body.description).slice(0, 2000));
     if (body.ignorePatterns !== undefined) app.setIgnorePatterns(params.id, Array.isArray(body.ignorePatterns) ? body.ignorePatterns.map(String).slice(0, 100) : []);
     if (body.category !== undefined) app.setCategory(params.id, body.category === '' ? 'auto' : String(body.category));
+    if (body.commands !== undefined) app.setManualCommands(params.id, body.commands);
     return app.projectCard(app.getProject(params.id));
+  });
+
+  // Hand-pinned build/test commands — the actionable way out of "该项目没有配置 X 命令".
+  r.post('/api/projects/:id/commands', ({ params, body }) => {
+    needProject(app, params.id);
+    app.setManualCommands(params.id, body.commands || {});
+    const project = app.getProject(params.id);
+    const manualCommands = (project.metadata && project.metadata.manualCommands) || {};
+    return { manualCommands, project: app.projectCard(project) };
+  });
+
+  // Run a single pinned (or auto-detected) command without a full rescan. Uses the
+  // existing BUILD / TEST job handlers, which go through CommandRunner's allowlist.
+  r.post('/api/projects/:id/commands/run', ({ params, body }) => {
+    needProject(app, params.id);
+    const kind = String(body.kind || 'build');
+    const allowed = ['build', 'lint', 'typecheck', 'test', 'integrationTest', 'e2e'];
+    if (!allowed.includes(kind)) {
+      throw new ValidationError('未知命令类型', [{ path: 'kind', message: `必须是：${allowed.join('、')}` }]);
+    }
+    let job;
+    if (kind === 'build' || kind === 'lint' || kind === 'typecheck') {
+      job = app.queue.enqueue({
+        projectId: params.id, type: JOB_TYPE.BUILD,
+        payload: { projectId: params.id, kind },
+        priority: 4, timeoutMs: DEFAULT_SCAN_LIMITS.buildTimeoutMs + 60000,
+      });
+    } else {
+      const suite = kind === 'e2e' ? 'e2e' : kind === 'integrationTest' ? 'integration' : 'unit';
+      job = app.queue.enqueue({
+        projectId: params.id, type: JOB_TYPE.TEST,
+        payload: { projectId: params.id, suite },
+        priority: 4, timeoutMs: DEFAULT_SCAN_LIMITS.testTimeoutMs + 60000,
+      });
+    }
+    return { jobId: job.id, kind };
   });
 
   /** Preview exactly what a source-purging delete would destroy. */

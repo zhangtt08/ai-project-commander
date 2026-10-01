@@ -1,122 +1,134 @@
 import { api } from '../api.js';
-import { h, metric, card, healthBadge, gateBadge, statusBadge, progressBar, mountAsync, stateEmpty, suiteResult, projectStatusLabel, enumLabel, fmt } from '../ui.js';
-import { state, setTopbar } from '../app.js';
-import { Router } from '../router.js';
+import { h, metric, card, healthBadge, stateEmpty, mountAsync, fmt } from '../ui.js';
+import { setTopbar } from '../app.js';
 import { openImportDialog } from './import.js';
 
-const SEV_GLYPH = { critical: '✕', high: '⚠', medium: 'ⓘ', low: '☰' };
+/**
+ * 首页 = 决策视图。
+ *
+ * 过去这一页把全部受管项目摊成一张长卡片列表，"现在该干什么"要人自己一行行找。现在收成两档：
+ *   1. 需要现在动手的项目 —— 每个只给一个主动作，动作指向那个已经核实过的原因（构建失败、
+ *      目录丢失、N 个测试不通过……），不出现分数、置信度或百分比式的伪判定。
+ *   2. 其余项目 —— 折叠成一行一个的紧凑清单，每个项目仍然一次点击可达；一条路由、一份数据都没删。
+ */
 
-function runCell(run, suite) {
-  if (!run) return h('span', { class: 'muted small', text: '未运行' });
-  const cls = run.status === 'pass' ? 'badge-pass' : run.status === 'fail' ? 'badge-fail' : run.status === 'error' ? 'badge-warning' : 'badge-unknown';
-  const ZH = { unit: '单元', integration: '集成', e2e: '端到端' };
-  return h('span', { class: `badge ${cls}`, title: run.command || '', text: `${ZH[suite] || suite}：${suiteResult(run)}` });
+const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+const SEV_ZH = { critical: '危急', high: '高', medium: '中', low: '低' };
+
+/** 每个"需要关注"的项目只呈现一个主动作：由该项目严重度最高的那条观察决定它跳去哪。 */
+const ACTION_BY_KIND = {
+  workspace_missing: { label: '修正路径或归档', tab: 'settings' },
+  critical_health: { label: '查看健康明细', tab: 'overview' },
+  build_fail: { label: '查看构建输出', tab: 'quality' },
+  test_fail: { label: '查看失败测试', tab: 'quality' },
+  test_error: { label: '查看测试输出', tab: 'quality' },
+  regression: { label: '对比最近快照', tab: 'quality' },
+  blocked_task: { label: '处理阻塞任务', tab: 'work' },
+  risk: { label: '分诊风险', tab: 'quality' },
+  dirty_workspace: { label: '检查工作区改动', tab: 'quality' },
+  drift: { label: '核对规范漂移', tab: 'overview' },
+  pending_review: { label: '查看待执行提示词', tab: 'ai' },
+};
+
+/** 关注项按严重度排好序后，同一项目第一次出现的就是它最严重的那条。 */
+function topItemByProject(items) {
+  const map = new Map();
+  for (const it of items) if (!map.has(it.projectId)) map.set(it.projectId, it);
+  return map;
 }
 
-function projectCard(cardData) {
-  const meta = cardData;
-  const shell = {
-    class: 'proj-card',
-    tabindex: '0',
-    role: 'link',
-    'aria-label': `打开项目 ${meta.name}`,
-    onClick: () => Router.go(`/projects/${meta.id}`),
-    onKeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); Router.go(`/projects/${meta.id}`); } },
-  };
+function actionFor(item, nextAction) {
+  const hit = ACTION_BY_KIND[item.kind];
+  if (hit) return hit;
+  return nextAction ? { label: '查看下一步行动', tab: 'overview' } : { label: '打开项目', tab: 'overview' };
+}
 
-  // The folder moved or was deleted outside Commander. Every cached verdict below would then be
-  // a claim about a directory that cannot be read, so the card reports only what is known now.
-  if (meta.workspaceMissing) {
-    return h('article', shell, [
-      h('div', { class: 'row-between' }, [
-        h('h3', { text: meta.name }),
-        h('span', { class: 'badge badge-critical', text: '目录已不存在' }),
+function decisionRow(cardData, item) {
+  const action = actionFor(item, cardData.nextAction);
+  return h('div', { class: `risk-item decision-row sev-${item.severity}` }, [
+    h('div', { class: 'decision-body' }, [
+      h('div', { class: 'row wrap' }, [
+        h('a', { class: 'decision-name', href: `#/projects/${cardData.id}`, text: cardData.name }),
+        healthBadge(cardData.health),
+        h('span', { class: `badge ${item.severity === 'critical' ? 'badge-critical' : 'badge-warning'}`, text: SEV_ZH[item.severity] || item.severity }),
       ]),
-      h('div', { class: 'path', text: meta.workspacePath }),
-      h('div', { class: 'stack-sm' }, [
-        h('div', { class: 'small', text: '这个目录当前不在磁盘上，历史结论已隐藏，因为它们不代表现状。' }),
-        h('div', { class: 'small muted', text: `最后一次分析：${fmt.date(meta.lastAnalyzedAt)} —— 请在「项目」页点「整理」修正路径后重新分析，或删除这条记录。` }),
-      ]),
-    ]);
-  }
+      h('div', { class: 'small', text: fmt.truncate(item.title, 140) }),
+      item.detail ? h('div', { class: 'small muted', text: fmt.truncate(item.detail, 160) }) : null,
+      item.at ? h('div', { class: 'small muted alert-time', title: `观察时间 ${fmt.date(item.at)}`, text: `观察于 ${fmt.rel(item.at)}` }) : null,
+    ]),
+    h('a', { class: 'btn btn-sm btn-primary', href: `#/projects/${cardData.id}/${action.tab}`, text: action.label }),
+  ]);
+}
 
-  return h('article', shell, [
-    h('div', { class: 'row-between' }, [
-      h('div', { class: 'row' }, [
-        h('h3', { text: meta.name }),
-        meta.isDemo ? h('span', { class: 'chip', text: '演示' }) : null,
-        meta.watchPaused ? h('span', { class: 'chip', text: '监控已暂停' }) : null,
-      ]),
-      healthBadge(meta.health),
-    ]),
-    h('div', { class: 'path', text: meta.workspacePath }),
-    h('div', { class: 'proj-stats' }, [
-      h('span', {}, [h('span', { class: 'muted', text: '分类 ' }), h('b', { text: meta.categoryLabel || '未分类' })]),
-      h('span', {}, [h('span', { class: 'muted', text: '阶段 ' }), h('b', { text: meta.currentStage || '未知' })]),
-      h('span', {}, [h('span', { class: 'muted', text: '状态 ' }), h('b', { text: projectStatusLabel(meta.status) })]),
-      h('span', {}, [h('span', { class: 'muted', text: '任务 ' }), h('b', { text: `${meta.taskSummary.done}/${meta.taskSummary.total}` })]),
-      h('span', {}, [h('span', { class: 'muted', text: '风险 ' }), h('b', { text: `${meta.riskSummary.bySeverity.critical} 危急 / ${meta.riskSummary.bySeverity.high} 高` })]),
-      meta.git && meta.git.isRepository ? h('span', {}, [h('span', { class: 'muted', text: '分支 ' }), h('b', { text: `${meta.git.branch}${meta.git.clean ? '' : `（${meta.git.changed + meta.git.untracked} 个未提交）`}` })]) : null,
-    ]),
-    h('div', { class: 'row wrap' }, [
-      meta.build ? statusBadge(meta.build.status) : null,
-      runCell(meta.unit, 'unit'),
-      runCell(meta.e2e, 'e2e'),
-      gateBadge(meta.gate),
-      meta.drift && meta.drift.verdict === 'possible_drift' ? h('span', { class: 'badge badge-warning', text: `规范漂移 ${meta.drift.count}` }) : null,
-      meta.regressionSummary && meta.regressionSummary.count ? h('span', { class: 'badge badge-critical', text: `${meta.regressionSummary.count} 项回归` }) : null,
-      meta.suggestionCount ? h('span', { class: 'badge badge-unknown', title: '可优化的建议', text: `${meta.suggestionCount} 条优化建议` }) : null,
-    ]),
-    progressBar({ percent: meta.progress ? meta.progress.percent : null, reason: meta.progress ? meta.progress.reason : '尚未计算' }),
-    h('div', { class: 'small muted' }, `最近活动 ${fmt.rel(meta.lastActivity)} · 分析于 ${fmt.rel(meta.lastAnalyzedAt)}`),
-    meta.nextAction ? h('div', { class: 'small' }, [
-      h('span', { class: 'muted', text: '下一步：' }),
-      h('span', { text: fmt.truncate(meta.nextAction.objective, 110) }),
-    ]) : null,
+function restRow(cardData, item) {
+  return h('div', { class: 'rest-row' }, [
+    h('a', { class: 'rest-name', href: `#/projects/${cardData.id}`, text: cardData.name }),
+    healthBadge(cardData.health),
+    h('span', { class: 'small muted', text: cardData.workspaceMissing ? '目录已丢失' : `${cardData.currentStage || '阶段未知'} · 任务 ${cardData.taskSummary.done}/${cardData.taskSummary.total}` }),
+    item
+      ? h('span', { class: `badge ${item.severity === 'medium' ? 'badge-info' : 'badge-neutral'}`, title: item.title, text: `${SEV_ZH[item.severity] || item.severity}：${fmt.truncate(item.kind, 24)}` })
+      : h('span', { class: 'badge badge-pass', text: '无待办事项' }),
   ]);
 }
 
 export async function render() {
-  setTopbar('仪表盘', '所有受管 AI 编码项目的实时工程状态。', [
+  setTopbar('仪表盘', '先看现在要动手的项目，其余项目折叠在下方，每个仍一键可达。', [
     h('button', { class: 'btn', text: '刷新', onClick: () => render() }),
     h('button', { class: 'btn btn-primary', text: '+ 添加项目', onClick: () => openImportDialog() }),
   ]);
   const view = document.getElementById('view');
 
-  await mountAsync(view, () => api.dashboard(), (data) => {
+  await mountAsync(view, () => Promise.all([api.dashboard(), api.attention()]), ([data, attention]) => {
     const c = data.counts;
-    const attentionData = state.attention || { items: [] };
-    const criticals = attentionData.items.filter((i) => i.severity === 'critical').length;
-    const head = h('div', { class: 'stack' }, [
-      h('div', { class: 'grid grid-4' }, [
-        metric('项目数', fmt.num(c.total), { foot: `${c.archived} 个已归档` }),
-        metric('健康', fmt.num(c.healthy), { cls: 'ok' }),
-        metric('警告', fmt.num(c.warning), { cls: c.warning ? 'warn' : '' }),
-        metric('危急', fmt.num(c.critical), { cls: c.critical ? 'alert' : '', foot: c.missing ? `${c.missing} 个目录已丢失` : undefined }),
-        metric('阻塞', fmt.num(c.blocked), { cls: c.blocked ? 'alert' : '' }),
-        metric('关注项', fmt.num(attentionData.items.length), { cls: criticals ? 'alert' : '', foot: `${criticals} 个紧急` }),
-      ]),
-      card('需要立即关注', attentionData.items.slice(0, 6).length
-        ? h('div', { class: 'stack-sm' }, attentionData.items.slice(0, 6).map((i) => h('div', { class: `risk-item alert-row sev-${i.severity}` }, [
-          h('span', { class: `sev-dot dot-${i.severity}`, 'aria-hidden': 'true', text: SEV_GLYPH[i.severity] || '•' }),
-          h('div', { class: 'alert-body' }, [
-            h('strong', { class: 'small', text: i.title }),
-            i.detail ? h('div', { class: 'small muted', text: fmt.truncate(i.detail, 200) }) : null,
-            i.at ? h('div', { class: 'small muted alert-time', title: `观察时间 ${fmt.date(i.at)}`, text: `⏱ ${fmt.rel(i.at)}` }) : null,
-          ]),
-          h('span', { class: `badge badge-${i.severity === 'critical' ? 'critical' : i.severity === 'high' ? 'warning' : 'unknown'}`, text: enumLabel(i.severity) }),
-          h('a', { class: 'alert-go', href: `#/projects/${i.projectId}`, 'aria-label': `打开项目 ${i.projectName || ''}`, text: '›' }),
-        ])))
-        : stateEmpty('暂无需关注的事项', '当前没有危急、阻塞、失败或回归的项目。'),
-      { actions: [h('a', { class: 'small', href: '#/attention', text: '查看全部 →' })], hint: `共 ${attentionData.items.length} 条` }),
+    const items = (attention && attention.items) || [];
+    const topByProject = topItemByProject(items);
 
-      h('div', { class: 'row-between' }, [
-        h('h2', { style: { fontSize: '13px', margin: '8px 0 0' }, text: `项目（${data.cards.length}）` }),
-      ]),
-      data.cards.length
-        ? h('div', { class: 'grid grid-2' }, data.cards.map(projectCard))
-        : stateEmpty('还没有项目', '点击「+ 添加项目」扫描这台电脑，或直接输入一个本地工作区路径。'),
+    // 只有危急 / 高 的观察才进入决策视图；中 / 低 与"没有事项"的项目收进折叠清单，不删除任何入口。
+    const attentionProjectIds = new Set();
+    const decisions = [];
+    for (const cardData of data.cards) {
+      const top = topByProject.get(cardData.id);
+      if (top && (top.severity === 'critical' || top.severity === 'high' || cardData.workspaceMissing)) {
+        decisions.push({ cardData, item: top });
+        attentionProjectIds.add(cardData.id);
+      }
+    }
+    decisions.sort((a, b) => (SEV_RANK[a.item.severity] - SEV_RANK[b.item.severity]) || a.cardData.name.localeCompare(b.cardData.name));
+    const rest = data.cards.filter((cardData) => !attentionProjectIds.has(cardData.id));
+
+    const metrics = h('div', { class: 'grid grid-4' }, [
+      metric('项目数', fmt.num(c.total), { foot: `${c.archived} 个已归档` }),
+      metric('健康', fmt.num(c.healthy), { cls: 'ok' }),
+      metric('警告', fmt.num(c.warning), { cls: c.warning ? 'warn' : '' }),
+      metric('危急', fmt.num(c.critical), { cls: c.critical ? 'alert' : '', foot: c.missing ? `${c.missing} 个目录已丢失` : undefined }),
+      metric('阻塞', fmt.num(c.blocked), { cls: c.blocked ? 'alert' : '' }),
+      metric('需要动手', fmt.num(decisions.length), { cls: decisions.length ? 'alert' : 'ok', foot: `另有 ${items.length} 条关注项` }),
     ]);
-    return head;
+
+    const decisionSection = decisions.length
+      ? card(`现在需要动手的项目（${decisions.length}）`, h('div', { class: 'stack-sm' }, decisions.map(({ cardData, item }) => decisionRow(cardData, item))), {
+        hint: '每个项目一个主动作，指向已核实的原因',
+        actions: [h('a', { class: 'small', href: '#/attention', text: '全部关注项 →' })],
+      })
+      : card('现在需要动手的项目', stateEmpty('当前没有需要立即处理的项目', '没有危急或高危的观察：构建、测试、目录都存在且未失败。下方折叠清单里有全部项目。'), { hint: '按已核实事实判定，不用分数或百分比' });
+
+    const restSection = rest.length
+      ? h('details', { class: 'rest-details' }, [
+        h('summary', {}, [
+          h('span', { class: 'rest-summary-title', text: `其余 ${rest.length} 个项目 · 当前没有需要你处理的事项` }),
+          h('span', { class: 'small muted', text: '展开查看每一个（点击进入详情）' }),
+        ]),
+        h('div', { class: 'rest-list' }, rest.map((cardData) => restRow(cardData, topByProject.get(cardData.id)))),
+      ])
+      : null;
+
+    return h('div', { class: 'stack' }, [
+      metrics,
+      decisionSection,
+      restSection,
+      h('div', { class: 'row wrap' }, [
+        h('a', { class: 'small', href: '#/projects', text: `查看全部 ${data.cards.length} 个项目的完整表格 →` }),
+      ]),
+    ]);
   }, { loadingLabel: '正在加载仪表盘…' });
 }

@@ -18,9 +18,13 @@ const log = logger.child('orchestrator');
 
 const RUN_SEVERITY = ['pass', 'unknown', 'unsupported', 'skipped', 'timeout', 'error', 'fail'];
 
+/** Commands the user pinned by hand (metadata.manualCommands) win over detection. */
+function projectManualCommands(project) {
+  return (project && project.metadata && project.metadata.manualCommands) || {};
+}
+
 /** Aggregate the suites into the one signal a suggestion should quote. */
-function pickWorstRun(runs) {
-  const list = (runs || []).filter(Boolean);
+function pickWorstRun(runs) {  const list = (runs || []).filter(Boolean);
   if (!list.length) return { status: 'unknown', total: 0, failed: 0, passed: 0, command: '', suite: '' };
   const rank = (r) => RUN_SEVERITY.lastIndexOf(String(r.status || 'unknown'));
   const worst = list.slice().sort((a, b) => rank(b) - rank(a))[0];
@@ -59,6 +63,7 @@ export class Orchestrator {
       this.events.record(projectId, EVENT_TYPE.SCAN_FAILED, `Quick scan failed: ${metadata.reason}`, { reason: metadata.reason }, { level: 'error' });
       throw new WorkspaceError(`workspace scan failed: ${metadata.reason}`, '项目目录已不存在或读不到——在「整理」里改成新位置后重新分析，或删除这条记录。');
     }
+    metadata.manualCommands = projectManualCommands(project);
     const git = await this.gitAnalyzer.analyze(project.workspace_path, { includeDiff: true, recentCommitCount: 10 });
     const patch = {
       metadata,
@@ -116,6 +121,7 @@ export class Orchestrator {
       this.events.record(projectId, EVENT_TYPE.SCAN_FAILED, `Full scan failed: ${metadata.reason}`, { reason: metadata.reason }, { level: 'error' });
       throw new WorkspaceError(`workspace scan failed: ${metadata.reason}`, '项目目录已不存在或读不到——在「整理」里改成新位置后重新分析，或删除这条记录。');
     }
+    metadata.manualCommands = projectManualCommands(project);
 
     // 2. Git
     const git = await this.gitAnalyzer.analyze(project.workspace_path, { includeDiff: true, recentCommitCount: 15 });
@@ -575,6 +581,7 @@ export class Orchestrator {
     queue.register(JOB_TYPE.BUILD, async (payload) => {
       const project = this.#project(payload.projectId);
       const metadata = (project.metadata && project.metadata.metadata) || (await this.scanner.scan(project.workspace_path, {}));
+      metadata.manualCommands = projectManualCommands(project);
       const result = await this.buildAnalyzer.run({ root: project.workspace_path, metadata }, payload.kind || 'build');
       this.repo.insert('build_results', {
         id: newId('bld'), project_id: payload.projectId, kind: result.kind, command: result.command || '(unsupported)',
@@ -590,6 +597,7 @@ export class Orchestrator {
     queue.register(JOB_TYPE.TEST, async (payload) => {
       const project = this.#project(payload.projectId);
       const metadata = (project.metadata && project.metadata.metadata) || (await this.scanner.scan(project.workspace_path, {}));
+      metadata.manualCommands = projectManualCommands(project);
       const run = await this.testAnalyzer.runSuite({ root: project.workspace_path, metadata }, payload.suite || 'unit');
       this.#persistTestRun(payload.projectId, run);
       const meta = { ...(project.metadata || {}), tests: { ...((project.metadata || {}).tests || {}) } };

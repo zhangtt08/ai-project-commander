@@ -208,6 +208,60 @@ function githubCard(d) {
   ]), { hint: g && g.stage === 'pushed' ? '仓库为非公开（private）' : '未配置令牌时不会有任何网络写入' });
 }
 
+const KIND_ZH = { build: '构建', lint: '代码检查', typecheck: '类型检查', test: '单元测试', integrationTest: '集成测试', e2e: '端到端测试' };
+const SOURCE_ZH = { 'package.json': 'package.json 脚本', framework: '框架推断', config: '配置文件', manual: '手动补充' };
+
+/** 单独运行一条命令（构建 / 测试），完成后借 scheduleScanRefresh 让本页自动刷新。 */
+async function runOneCommand(projectId, kind) {
+  try {
+    state.scanPending.add(projectId);
+    await api.runCommand(projectId, kind);
+    toast('命令已入队，运行完成后本页自动刷新。', 'ok', 5000);
+    scheduleScanRefresh(projectId);
+  } catch (err) { toast(`运行入队失败：${errorText(err)}`, 'error'); }
+}
+
+/** 没检测到命令时的可执行出路：在界面补一条命令，保存后单独运行。 */
+function openCommandEditor(projectId, kind, current) {
+  const input = h('input', { class: 'input', value: current || '', placeholder: '例如 npm run build', 'aria-label': `${KIND_ZH[kind] || kind} 命令`, autofocus: 'true' });
+  const dlg = modal(`补充${KIND_ZH[kind] || kind}命令`, h('div', { class: 'stack-sm' }, [
+    h('div', { class: 'small muted', text: '输入一条要运行的命令（不要带管道、重定向或 ; 串联）。保存后 Commander 会在该项目的工作目录里单独运行它；命令仍会经过安全白名单，危险类或安装类命令会被拦下并说明原因。留空保存即恢复自动检测。' }),
+    input,
+    h('div', { class: 'row' }, [
+      h('button', { class: 'btn btn-primary', text: '保存并运行', onClick: async () => {
+        const value = input.value.trim();
+        try {
+          await api.setCommands(projectId, { [kind]: value });
+          dlg.close();
+          if (value) await runOneCommand(projectId, kind);
+          else toast('已清除该命令的手动补充，将恢复自动检测', 'info');
+        } catch (err) { toast(errorText(err), 'error'); }
+      } }),
+      h('button', { class: 'btn', text: '取消', onClick: () => dlg.close() }),
+    ]),
+  ]));
+  input.focus();
+}
+
+function renderCommandsCard(d) {
+  if (!d.commands.length) {
+    return card('构建 / 测试命令', stateEmpty('还没有元数据', '运行一次全量扫描以检测构建与测试命令。'));
+  }
+  return card('构建 / 测试命令', h('div', { class: 'stack-sm' }, [
+    h('div', { class: 'small muted', text: '某一类命令没有自动检测到时，直接在“操作”里补一条命令即可，无需改 package.json；补进去的命令仍会走安全白名单。' }),
+    table([
+      { label: '类型', render: (r) => KIND_ZH[r.kind] || r.kind },
+      { label: '当前命令', render: (r) => (r.display ? h('code', { class: 'inline', text: r.display }) : h('span', { class: 'badge badge-unsupported', text: '未检测到' })) },
+      { label: '来源', render: (r) => h('span', { class: `chip${r.manual ? ' chip-ok' : ''}`, text: SOURCE_ZH[r.source] || r.source || '—' }) },
+      { label: '不适用原因', render: (r) => h('span', { class: 'small muted', text: fmt.truncate(r.reason || '', 90) }) },
+      { label: '操作', render: (r) => h('div', { class: 'row wrap' }, [
+        h('button', { class: 'btn btn-sm', text: r.manual ? '编辑命令' : r.supported ? '改用手动' : '补充命令', onClick: () => openCommandEditor(d.project.id, r.kind, r.display || '') }),
+        r.supported ? h('button', { class: 'btn btn-sm', text: '单独运行', onClick: () => runOneCommand(d.project.id, r.kind) }) : null,
+      ]) },
+    ], d.commands),
+  ]), { hint: '只读项目文件；执行前仍走安全白名单' });
+}
+
 async function renderOverview(container, id) {
   await mountAsync(container, () => api.projectDetail(id), (d) => {
     const p = d.project;
@@ -217,7 +271,7 @@ async function renderOverview(container, id) {
 
     return h('div', { class: 'stack' }, [
       h('div', { class: 'grid grid-4' }, [
-        metric('健康', healthLabel(p.health), { cls: p.health === 'healthy' ? 'ok' : p.health === 'critical' ? 'alert' : p.health === 'warning' ? 'warn' : '', foot: d.health ? `${d.health.score}/100` : '' }),
+        metric('健康', healthLabel(p.health), { cls: p.health === 'healthy' ? 'ok' : p.health === 'critical' ? 'alert' : p.health === 'warning' ? 'warn' : '', foot: d.health ? `${d.health.reasons.filter((r) => r.severity !== 'info').length} 个待处理问题 · ${d.health.reasons.filter((r) => r.severity === 'info').length} 个正面信号（详见下方健康明细）` : '' }),
         metric('阶段', p.currentStage || '未知', { sm: true, foot: projectStatusLabel(p.status) }),
         metric('构建', d.build ? runStatusLabel(d.build.status) : '未运行', { sm: true, cls: d.build && d.build.status === 'pass' ? 'ok' : d.build && d.build.status === 'fail' ? 'alert' : '', foot: d.build ? d.build.command : '' }),
         metric('单元测试', suiteResult(d.tests.unit), { cls: d.tests.unit && d.tests.unit.status === 'pass' ? 'ok' : d.tests.unit && d.tests.unit.status === 'fail' ? 'alert' : '' }),
@@ -232,7 +286,7 @@ async function renderOverview(container, id) {
       h('div', { class: 'grid grid-2' }, [
         card('进度', h('div', { class: 'stack-sm' }, [
           progressBar(d.progress),
-          d.progress && d.progress.method ? h('div', { class: 'small muted', text: `方法 ${d.progress.method} · 置信度 ${enumLabel(d.progress.confidence)}` }) : null,
+          d.progress && d.progress.method ? h('div', { class: 'small muted', text: `方法 ${d.progress.method} · 依据 ${((d.progress.parts || []).filter((p) => p.value !== null)).length}/${(d.progress.parts || []).length} 类证据` }) : null,
           (d.progress && d.progress.parts ? d.progress.parts : []).map((part) => h('div', { class: 'small muted', text: `${enumLabel(part.key)}：${part.detail}` })),
         ]), { hint: '仅由阶段 + 任务 + 验收标准推导' }),
 
@@ -254,7 +308,7 @@ async function renderOverview(container, id) {
         h('div', { class: 'row wrap' }, [
           h('span', { class: 'badge badge-accent', text: d.nextAction.priority }),
           h('span', { class: 'badge badge-neutral', text: `规则 ${d.nextAction.deterministicRule || '无'}` }),
-          d.nextAction.confidence ? h('span', { class: 'badge badge-neutral', text: `置信度 ${enumLabel(d.nextAction.confidence)}` }) : null,
+          (d.nextAction.evidence && d.nextAction.evidence.length) ? h('span', { class: 'badge badge-neutral', text: `${d.nextAction.evidence.length} 条证据` }) : null,
           d.nextAction.aiProvider ? mockBadge(d.nextAction.aiProvider) : null,
         ]),
         h('strong', { text: d.nextAction.objective }),
@@ -300,15 +354,7 @@ async function renderOverview(container, id) {
         ]) : stateEmpty('暂无漂移分析')),
       ]),
 
-      card('检测到的命令', d.commands.length
-        ? table([
-          { label: '类型', key: 'kind' },
-          { label: '是否支持', render: (r) => (r.supported ? h('span', { class: 'badge badge-pass', text: '是' }) : h('span', { class: 'badge badge-unknown', text: '否' })) },
-          { label: '命令', render: (r) => (r.display ? h('code', { class: 'inline', text: r.display }) : '—') },
-          { label: '来源', key: 'source' },
-          { label: '不适用时的原因', render: (r) => h('span', { class: 'small muted', text: r.reason || '' }) },
-        ], d.commands)
-        : stateEmpty('还没有元数据')),
+      renderCommandsCard(d),
 
       card('项目元数据', meta ? h('dl', { class: 'kv' }, [
         h('dt', { text: '已扫描文件' }), h('dd', { text: `${meta.fileCount} (${fmt.bytes(meta.totalBytes)})${meta.truncated ? ' —— 已达配置上限，结果被截断' : ''}` }),
@@ -325,7 +371,7 @@ async function renderOverview(container, id) {
       ]) : stateEmpty('尚未扫描', '请运行一次全量扫描。')),
 
       d.aiSummary ? card('AI 项目摘要', h('div', { class: 'stack-sm' }, [
-        h('div', { class: 'row' }, [mockBadge(d.aiSummary.provider), h('span', { class: 'badge badge-neutral', text: `置信度 ${enumLabel(d.aiSummary.confidence)}` })]),
+        h('div', { class: 'row' }, [mockBadge(d.aiSummary.provider), (d.aiSummary.evidence || []).length ? h('span', { class: 'badge badge-neutral', text: `${d.aiSummary.evidence.length} 条证据` }) : null]),
         h('div', { class: 'small', text: d.aiSummary.summary }),
         d.aiSummary.mainModules && d.aiSummary.mainModules.length ? h('div', { class: 'tag-list' }, d.aiSummary.mainModules.map((m) => h('span', { class: 'chip', text: m }))) : null,
         evidenceList(d.aiSummary.evidence || []),
@@ -1004,7 +1050,7 @@ async function renderSuggestions(container, projectId) {
       h('div', { class: 'row wrap' }, [
         h('strong', { text: '识别结果' }),
         h('span', { class: 'chip', text: `分类：${data.categoryLabel || (cls && cls.label) || '未分类'}` }),
-        cls ? h('span', { class: 'chip', text: `置信度：${enumLabel(cls.confidence) || cls.confidence}` }) : null,
+        cls ? h('span', { class: 'chip', text: cls.manual ? '分类：你手动指定' : `分类由 ${((cls.reasons || []).length)} 条证据推断` }) : null,
         purpose && purpose.declared ? h('span', { class: 'chip chip-ok', text: '用途来自项目自己的文档' }) : h('span', { class: 'chip', text: '用途为结构推断' }),
       ]),
       h('div', { class: 'small', text: purpose && purpose.purpose ? `用途：${purpose.purpose}` : '用途：仓库里没有可读的用途描述。' }),
